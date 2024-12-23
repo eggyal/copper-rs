@@ -1,7 +1,7 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use std::fs::read_to_string;
 use syn::meta::parser;
 use syn::Fields::{Named, Unnamed};
@@ -19,7 +19,7 @@ use cu29_runtime::curuntime::{
 
 #[cfg(feature = "macro_debug")]
 use format::{highlight_rust_code, rustfmt_generated_code};
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span};
 
 mod format;
 mod utils;
@@ -30,6 +30,108 @@ const DEFAULT_CLNB: usize = 10;
 #[inline]
 fn int2sliceindex(i: u32) -> syn::Index {
     syn::Index::from(i as usize)
+}
+
+synstructure::decl_derive!(
+    [Message, attributes(message)] =>
+    /// Derives implementations of [`Message`] and [`MessageFields`] for the annotated struct or enum.
+    ///
+    /// By default, the marshalled representation will comprise a reference to each field.  Fields may
+    /// be annotated with `#[message(clone)]` to use a `Clone` instead.
+    // TODO: enable fields to be skipped/ignored eg with #[message(skip)]
+    derive_message
+);
+
+fn derive_message(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
+    let krate = quote! { ::cu29_encode };
+    let ast = s.ast();
+    let name = &ast.ident.to_string();
+
+    let mut lt = String::from("'this");
+    while ast.generics.lifetimes().any(|existing| existing.lifetime.ident == lt[1..]) {
+        lt.push('_');
+    }
+    let lt = syn::Lifetime::new(&lt, Span::call_site());
+    
+    s.add_bounds(synstructure::AddBounds::None);
+
+    fn use_clone(field: &syn::Field) -> syn::Result<bool> {
+        for attr in &field.attrs {
+            if attr.path().is_ident("message") {
+                let mut clone = false;
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("clone") {
+                        clone = true;
+                        Ok(())
+                    } else {
+                        Err(meta.error("unsupported argument"))
+                    }
+                })?;
+                if clone {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    let alts = s.variants().iter().map(|variant| {
+        let tys = variant.bindings().iter().map(|binding| {
+            let ast = binding.ast();
+
+            let mut inner = &ast.ty;
+            while let syn::Type::Reference(ty_ref) = inner {
+                inner = &ty_ref.elem;
+            };
+
+            use_clone(ast).map(|clone| if clone {
+                inner.to_token_stream()
+            } else {
+                quote!(enc::Ref<&#lt #inner>)
+            }).unwrap_or_else(syn::Error::into_compile_error)
+        });
+        quote! { #krate::Cons!(#(#tys),*) }
+    });
+
+    let descriptors = s.variants().iter().map(|variant| {
+        let fields = variant.bindings().iter().enumerate().map(|(idx, binding)| {
+            let name = binding.ast().ident.as_ref().map(ToString::to_string).unwrap_or_else(|| idx.to_string());
+            quote! { enc::FieldDescriptor { name: #name, default: None } }
+        });
+        quote! { #krate::cons![ #(#fields),* ]}
+    });
+
+    // We don't use `Structure::each_variant` here as the library provides no guarantee over iteration order,
+    // which we require to match the iteration of `s.variants()` in `alts` and `descriptors` above.
+    let arms = s.variants().iter().enumerate().map(|(idx, variant)| {
+        let pat = variant.pat();
+        let fields = variant.bindings().iter().map(|binding| {
+            let ast = binding.ast();
+
+            use_clone(ast).map(|clone| if clone {
+                quote! { #binding.clone() }
+            } else {
+                quote! { enc::Ref::new(#binding) }
+            }).unwrap_or_else(syn::Error::into_compile_error)
+        });
+        let prefix = std::iter::repeat_n(quote! { @ }, idx);
+        quote! { #pat => #krate::alt![#(#prefix)* #krate::cons![ #(#fields),* ]], }
+    });
+
+    s.gen_impl(quote! {
+        use #krate::encoding as enc;
+
+        gen impl enc::Message for @Self {
+            const NAME: &'static str = #name;//TODO: handle name collisions? (eg add a UUID)
+        }
+        gen impl<#lt> enc::MessageFields<#lt> for @Self {
+            type Fields = #krate::Alt!(#(#alts),*);
+            const DESCRIPTOR: enc::Desc<Self::Fields> = #krate::altdesc![#(#descriptors),*];
+            fn as_fields(&#lt self) -> Self::Fields {
+                match self { #(#arms)* }
+            }
+        }
+    })
 }
 
 /// Generates the CopperList content type from a config.

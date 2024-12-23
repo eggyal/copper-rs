@@ -1,0 +1,17 @@
+[package]
+name = "cu29_encode"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+bincode.workspace = true
+cu29-derive = { workspace = true }
+
+[dev-dependencies]
+static_assertions = "1.1.0"
