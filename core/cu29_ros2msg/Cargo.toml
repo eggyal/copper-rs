@@ -1,5 +1,5 @@
 [package]
-name = "cu29-encode"
+name = "cu29-ros2msg"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -11,4 +11,4 @@ repository.workspace = true
 
 [dependencies]
 bincode.workspace = true
-cu29-derive.workspace = true
+cu29-encode.workspace = true

@@ -1,9 +1,9 @@
 use super::{
-    encoding::{FormatType, MessageExt, Value},
+    encoding::{compound::CompoundTypeExt, EncodableType, Encodes, FormatType},
     format::*,
     invoke_macro_with_primitives, Ros2Msg,
 };
-use std::borrow::Borrow;
+use core::fmt;
 
 pub enum FieldType {
     Bool,
@@ -38,7 +38,7 @@ pub enum FieldType {
     },
 
     Message {
-        name: &'static str,
+        name: &'static dyn fmt::Display,
     },
 }
 
@@ -56,27 +56,33 @@ impl_formattype! {
     Char(_),
 }
 
-impl<D: Value<Ros2Msg>> FormatType<Ros2Msg> for Defer<D> {
-    const FIELD_TYPE: FieldType = D::FormatType::FIELD_TYPE;
-}
-
-impl<'a, T: 'a + Value<Ros2Msg>, const N: usize> FormatType<Ros2Msg> for StaticArray<'_, T, N> {
+impl<'a, I: Clone + IntoIterator<Item: 'a + EncodableType>, const LEN: usize> FormatType<Ros2Msg>
+    for StaticArray<I, LEN>
+where
+    Ros2Msg: Encodes<I::Item>,
+{
     const FIELD_TYPE: FieldType = FieldType::StaticArray {
-        elements: &T::FormatType::<'a>::FIELD_TYPE,
-        length: N,
+        elements: &<Ros2Msg as Encodes<I::Item>>::FormatType::<'a>::FIELD_TYPE,
+        length: LEN,
     };
 }
-impl<'a, T: 'a + Value<Ros2Msg>, I: Clone + Iterator<Item: Borrow<T>>> FormatType<Ros2Msg>
-    for UnboundedArray<'_, I, T>
+impl<'a, I: Clone + IntoIterator<Item: 'a + EncodableType>, const MAX: usize> FormatType<Ros2Msg>
+    for BoundedArray<I, MAX>
+where
+    Ros2Msg: Encodes<I::Item>,
+{
+    const FIELD_TYPE: FieldType = FieldType::BoundedArray {
+        elements: &<Ros2Msg as Encodes<I::Item>>::FormatType::<'a>::FIELD_TYPE,
+        bound: MAX,
+    };
+}
+impl<'a, I: Clone + IntoIterator<Item: 'a + EncodableType>> FormatType<Ros2Msg>
+    for UnboundedArray<I>
+where
+    Ros2Msg: Encodes<I::Item>,
 {
     const FIELD_TYPE: FieldType = FieldType::UnboundedArray {
-        elements: &T::FormatType::<'a>::FIELD_TYPE,
-    };
-}
-impl<'a, T: 'a + Value<Ros2Msg>, const N: usize> FormatType<Ros2Msg> for BoundedArray<'_, T, N> {
-    const FIELD_TYPE: FieldType = FieldType::BoundedArray {
-        elements: &T::FormatType::<'a>::FIELD_TYPE,
-        bound: N,
+        elements: &<Ros2Msg as Encodes<I::Item>>::FormatType::<'a>::FIELD_TYPE,
     };
 }
 
@@ -90,6 +96,6 @@ impl<const N: usize> FormatType<Ros2Msg> for BoundedString<N> {
     const FIELD_TYPE: FieldType = FieldType::BoundedString { bound: N };
 }
 
-impl<M: MessageExt<Ros2Msg>> FormatType<Ros2Msg> for MessageType<'_, M> {
+impl<M: CompoundTypeExt<Ros2Msg>> FormatType<Ros2Msg> for MessageType<'_, M> {
     const FIELD_TYPE: FieldType = FieldType::Message { name: M::NAME };
 }
