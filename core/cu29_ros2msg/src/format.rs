@@ -1,4 +1,4 @@
-use super::invoke_macro_with_primitives;
+use super::{invoke_macro_with_primitives, Ros2Msg};
 use bincode::Encode;
 use std::marker::PhantomData;
 
@@ -24,11 +24,11 @@ impl<I, T> UnboundedArray<'_, I, T> {
     }
 }
 pub struct BoundedArray<'a, T, const N: usize> {
-    pub(super) data: &'a [T; N],
+    pub(super) data: &'a [T],
     pub(super) length: usize,
 }
 
-pub struct Defer<D>(pub(super) D);
+pub type Defer<D> = super::encoding::Defer<D, Ros2Msg>;
 
 #[derive(Encode)]
 pub struct String<'a>(pub(super) &'a [u8]);

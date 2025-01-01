@@ -11,6 +11,7 @@ members = [
     "core/cu29_log",
     "core/cu29_log_derive",
     "core/cu29_log_runtime",
+    "core/cu29_ros2msg",
     "core/cu29_runtime",
     "core/cu29_soa_derive",
     "core/cu29_traits",

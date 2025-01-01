@@ -32,32 +32,49 @@ fn int2sliceindex(i: u32) -> syn::Index {
     syn::Index::from(i as usize)
 }
 
+// #[proc_macro]
+// #[allow(non_snake_case)]
+// pub fn Str(input: TokenStream) -> TokenStream {
+//     let krate = quote! { ::cu29_encode };
+//     let input = parse_macro_input!(input as syn::LitStr).value();
+//     let chars = input.chars();
+//     quote!(#krate::Cons![#(::typenum::U::<{#chars as usize}>),*]).into()
+// }
+
 synstructure::decl_derive!(
-    [Message, attributes(message)] =>
-    /// Derives implementations of [`Message`] and [`MessageFields`] for the annotated struct or enum.
+    [ComplexType, attributes(complex_type)] =>
+    /// Derives implementations of [`ComplexType`] and [`ComplexTypeDef`] for the annotated struct or enum.
     ///
     /// By default, the marshalled representation will comprise a reference to each field.  Fields may
-    /// be annotated with `#[message(clone)]` to use a `Clone` instead.
-    // TODO: enable fields to be skipped/ignored eg with #[message(skip)]
-    derive_message
+    /// be annotated with `#[complex_type(clone)]` to use a `Clone` instead.
+    // TODO: enable fields to be skipped/ignored eg with #[complex_type(skip)]
+    derive_complex_type
 );
 
-fn derive_message(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
-    let krate = quote! { ::cu29_encode };
+fn derive_complex_type(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
     let ast = s.ast();
-    let name = &ast.ident.to_string();
+    let (is_enum, combine) = match ast.data {
+        syn::Data::Enum(_) => (true, quote!(Alt)),
+        syn::Data::Struct(_) => (false, quote!(Cons)),
+        syn::Data::Union(_) => return quote! { compile_error!("union types are not supported") },
+    };
+    let name = ast.ident.to_string();
 
     let mut lt = String::from("'this");
-    while ast.generics.lifetimes().any(|existing| existing.lifetime.ident == lt[1..]) {
+    while ast
+        .generics
+        .lifetimes()
+        .any(|existing| existing.lifetime.ident == lt[1..])
+    {
         lt.push('_');
     }
     let lt = syn::Lifetime::new(&lt, Span::call_site());
-    
+
     s.add_bounds(synstructure::AddBounds::None);
 
     fn use_clone(field: &syn::Field) -> syn::Result<bool> {
         for attr in &field.attrs {
-            if attr.path().is_ident("message") {
+            if attr.path().is_ident("complex_type") {
                 let mut clone = false;
                 attr.parse_nested_meta(|meta| {
                     if meta.path.is_ident("clone") {
@@ -75,60 +92,110 @@ fn derive_message(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
         Ok(false)
     }
 
-    let alts = s.variants().iter().map(|variant| {
-        let tys = variant.bindings().iter().map(|binding| {
+    let content = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
+        assert!(idx == 0 || is_enum);
+
+        let mut tys = variant.bindings().iter().map(|binding| {
             let ast = binding.ast();
 
             let mut inner = &ast.ty;
             while let syn::Type::Reference(ty_ref) = inner {
                 inner = &ty_ref.elem;
-            };
+            }
 
-            use_clone(ast).map(|clone| if clone {
-                inner.to_token_stream()
-            } else {
-                quote!(enc::Ref<&#lt #inner>)
-            }).unwrap_or_else(syn::Error::into_compile_error)
+            use_clone(ast)
+                .map(|clone| {
+                    if clone {
+                        inner.to_token_stream()
+                    } else {
+                        quote! { enc::Ref<&#lt #inner> }
+                    }
+                })
+                .unwrap_or_else(syn::Error::into_compile_error)
         });
-        quote! { #krate::Cons!(#(#tys),*) }
+
+        let mut done = Some(());
+        std::iter::from_fn(move || {
+            if is_enum {
+                done.take().map(|_| {
+                    let tys = &mut tys;
+                    quote! { Cons![ #(#tys),* ] }
+                })
+            } else {
+                tys.next()
+            }
+        })
     });
 
-    let descriptors = s.variants().iter().map(|variant| {
-        let fields = variant.bindings().iter().enumerate().map(|(idx, binding)| {
-            let name = binding.ast().ident.as_ref().map(ToString::to_string).unwrap_or_else(|| idx.to_string());
-            quote! { enc::FieldDescriptor { name: #name, default: None } }
+    let descriptors = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
+        assert!(variant.prefix.is_some() == is_enum);
+        assert!(idx == 0 || is_enum);
+
+        let mut fields = variant.bindings().iter().enumerate().map(|(idx, binding)| {
+            let name = binding
+                .ast()
+                .ident
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| idx.to_string());
+            quote! { enc::FieldDescriptor::no_default(#name) }
         });
-        quote! { #krate::cons![ #(#fields),* ]}
+
+        let mut done = Some(());
+        std::iter::from_fn(move || {
+            if is_enum {
+                done.take().map(|_| {
+                    let prefix = variant.prefix.unwrap().to_string();
+                    let fields = &mut fields;
+                    quote! { enc::VariantDescriptor::new(#prefix, cons![ #(#fields),* ]) }
+                })
+            } else {
+                fields.next()
+            }
+        })
     });
 
     // We don't use `Structure::each_variant` here as the library provides no guarantee over iteration order,
     // which we require to match the iteration of `s.variants()` in `alts` and `descriptors` above.
     let arms = s.variants().iter().enumerate().map(|(idx, variant)| {
-        let pat = variant.pat();
         let fields = variant.bindings().iter().map(|binding| {
             let ast = binding.ast();
 
-            use_clone(ast).map(|clone| if clone {
-                quote! { #binding.clone() }
-            } else {
-                quote! { enc::Ref::new(#binding) }
-            }).unwrap_or_else(syn::Error::into_compile_error)
+            use_clone(ast)
+                .map(|clone| {
+                    if clone {
+                        quote! { #binding.clone() }
+                    } else {
+                        quote! { enc::Ref::new(#binding) }
+                    }
+                })
+                .unwrap_or_else(syn::Error::into_compile_error)
         });
-        let prefix = std::iter::repeat_n(quote! { @ }, idx);
-        quote! { #pat => #krate::alt![#(#prefix)* #krate::cons![ #(#fields),* ]], }
+
+        let fields = quote! { cons![ #(#fields),* ] };
+        let constructed = if is_enum {
+            let prefix = std::iter::repeat_n(quote! { @ }, idx);
+            quote! { alt![ #(#prefix)* #fields ] }
+        } else {
+            assert_eq!(idx, 0);
+            fields
+        };
+
+        let pat = variant.pat();
+        quote! { #pat => #constructed }
     });
 
     s.gen_impl(quote! {
-        use #krate::encoding as enc;
+        use ::cu29_encode::{Alt, alt, Cons, cons, self as enc};
 
-        gen impl enc::Message for @Self {
-            const NAME: &'static str = #name;//TODO: handle name collisions? (eg add a UUID)
+        gen impl enc::NameableType for @Self {
+            const NAME: &'static dyn ::core::fmt::Display = &#name;//TODO: handle name collisions? (eg add a UUID)
         }
-        gen impl<#lt> enc::MessageFields<#lt> for @Self {
-            type Fields = #krate::Alt!(#(#alts),*);
-            const DESCRIPTOR: enc::Desc<Self::Fields> = #krate::altdesc![#(#descriptors),*];
-            fn as_fields(&#lt self) -> Self::Fields {
-                match self { #(#arms)* }
+        gen impl<#lt> enc::ComplexTypeDef<#lt> for @Self {
+            type Content = #combine![ #(#content),* ];
+            const DESCRIPTOR: enc::Desc<Self::Content> = cons![ #(#descriptors),* ];
+            fn content(&#lt self) -> Self::Content {
+                match *self { #(#arms)* }
             }
         }
     })

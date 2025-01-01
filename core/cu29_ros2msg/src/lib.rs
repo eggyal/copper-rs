@@ -7,12 +7,23 @@ mod format;
 mod schema;
 mod value;
 
-use crate::encoding::{self, DataFormat, FormatType};
+use cu29_encode::{self as encoding, DataFormat, FormatType, NameableType};
 use schema::FieldType;
+
+#[repr(transparent)]
+pub struct Ros2<Inner>(Inner);
+
+impl<M: NameableType> NameableType for Ros2<M> {
+    const NAME: &dyn std::fmt::Display = M::NAME;
+}
+unsafe impl<Inner> encoding::Wrapped for Ros2<Inner> {
+    type Inner = Inner;
+}
 
 pub struct Ros2Msg;
 impl DataFormat for Ros2Msg {
     type FieldType = FieldType;
+    type Wrapped<Inner> = Ros2<Inner>;
 }
 
 macro_rules! invoke_macro_with_primitives {
