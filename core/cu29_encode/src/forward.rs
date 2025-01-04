@@ -28,11 +28,11 @@ macro_rules! delegate {
 /// Creates [`ForwardingType`]s via owned values.
 #[macro_export]
 macro_rules! defer {
-    ($(fn$([$($lt:lifetime, )?$t:ident$(: $($bounds:tt)+)?])?($self:ident: $from:ty) -> $to:ty { $def:expr })*) => {$(
+    (fn$([$($lt:lifetime, )?$t:ident$(: $($bounds:tt)+)?])?(&$b:lifetime $self:ident: $from:ty) -> $to:ty as $via:ty { $def:expr } $($rest:tt)*) => {
         impl<$($($lt, )?)?Format: $crate::Encodes<$to>$(, $t: $crate::EncodableType $(+ $($bounds)+)?)?> $crate::forward::EncodesForwarding<$from> for Format {
-            type ForwardingFormatType<'a> = $crate::forward::Defer<$to, Format> where $from: 'a;
+            type ForwardingFormatType<$b> = $crate::forward::Defer<$via, Format> where $from: $b;
             #[allow(clippy::needless_lifetimes)]
-            fn forward_encodable<'a>($self: &'a $from) -> Self::ForwardingFormatType<'a> {
+            fn forward_encodable<$b>($self: &$b $from) -> Self::ForwardingFormatType<$b> {
                 $crate::forward::Defer::new($def)
             }
         }
@@ -44,7 +44,15 @@ macro_rules! defer {
             type Sigil = $crate::forward::Forwarding;
         }
         impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::forward::ForwardingType for $from {}
-    )*};
+        defer! { $($rest)* }
+    };
+    (fn$([$($lt:lifetime, )?$t:ident$(: $($bounds:tt)+)?])?($self:ident: $from:ty) -> $to:ty { $def:expr } $($rest:tt)*) => {
+        defer! {
+            fn$([$($lt, )?$t$(: $($bounds)+)?])?(&'a $self: $from) -> $to as $to { $def }
+            $($rest)*
+        }
+    };
+    () => {};
 }
 
 /// [`EncodableType::Sigil`] sigil for [`ForwardingType`]s.

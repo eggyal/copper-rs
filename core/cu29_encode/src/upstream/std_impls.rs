@@ -1,12 +1,11 @@
 use super::{Entry, EntryIter};
 use crate::{
-    alt,
-    compound::{Compound, CompoundTypeDef, Desc, FieldDescriptor, VariantDescriptor},
-    concat, cons, delegate,
+    alt, concat, cons, defer, delegate,
     element::elements,
-    forward::{Defer, EncodesForwarding, Forwarding, ForwardingType},
+    forward::{EncodesForwarding, Forwarding, ForwardingType},
     Alt, Cons, EncodableType, Encodes, NameableType,
 };
+use cu29_derive::fake_derive;
 use std::{
     collections::{hash_map, HashMap, HashSet},
     ffi::{CStr, CString},
@@ -32,113 +31,41 @@ delegate! {
     fn['b, T: ?Sized](this: RwLockWriteGuard<'b, T>) -> T { this }
 }
 
-impl<Format: Encodes<T>, T: ?Sized + EncodableType> EncodesForwarding<Mutex<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Defer<MutexGuard<'a, T>, Format>
-    where
-        T: 'a;
-    fn forward_encodable(this: &Mutex<T>) -> Self::ForwardingFormatType<'_> {
-        Defer::new(this.lock().unwrap())
-    }
-}
-impl<T: ?Sized + EncodableType> NameableType for Mutex<T> {
-    const NAME: &dyn fmt::Display = T::NAME;
-}
-impl<T: ?Sized + EncodableType> EncodableType for Mutex<T> {
-    type Sigil = Forwarding;
-}
-impl<T: ?Sized + EncodableType> ForwardingType for Mutex<T> {}
-
-impl<Format: Encodes<T>, T: ?Sized + EncodableType> EncodesForwarding<RwLock<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Defer<RwLockReadGuard<'a, T>, Format>
-    where
-        T: 'a;
-    fn forward_encodable(this: &RwLock<T>) -> Self::ForwardingFormatType<'_> {
-        Defer::new(this.read().unwrap())
-    }
-}
-impl<T: ?Sized + EncodableType> NameableType for RwLock<T> {
-    const NAME: &dyn fmt::Display = T::NAME;
-}
-impl<T: ?Sized + EncodableType> EncodableType for RwLock<T> {
-    type Sigil = Forwarding;
-}
-impl<T: ?Sized + EncodableType> ForwardingType for RwLock<T> {}
-
-impl NameableType for IpAddr {
-    const NAME: &dyn fmt::Display = &"IpAddr";
-}
-impl EncodableType for IpAddr {
-    type Sigil = Compound;
-}
-impl<'a> CompoundTypeDef<'a> for IpAddr {
-    type Intermediate = Alt!(Cons!(&'a Ipv4Addr), Cons!(&'a Ipv6Addr));
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        VariantDescriptor::new("V4", cons![FieldDescriptor::no_default("0")]),
-        VariantDescriptor::new("V6", cons![FieldDescriptor::no_default("0")]),
-    ];
-    fn intermediate(&'a self) -> Self::Intermediate {
-        match self {
-            IpAddr::V4(v4) => alt![cons![v4]],
-            IpAddr::V6(v6) => alt![@cons![v6]],
-        }
-    }
+defer! {
+    fn[T: ?Sized](&'a this: Mutex<T>) -> T as MutexGuard<'a, T> { this.lock().unwrap() }
+    fn[T: ?Sized](&'a this: RwLock<T>) -> T as RwLockReadGuard<'a, T> { this.read().unwrap() }
 }
 
-impl NameableType for SocketAddr {
-    const NAME: &dyn fmt::Display = &"SocketAddr";
-}
-impl EncodableType for SocketAddr {
-    type Sigil = Compound;
-}
-impl<'a> CompoundTypeDef<'a> for SocketAddr {
-    type Intermediate = Alt!(Cons!(&'a SocketAddrV4), Cons!(&'a SocketAddrV6),);
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        VariantDescriptor::new("V4", cons![FieldDescriptor::no_default("0")]),
-        VariantDescriptor::new("V6", cons![FieldDescriptor::no_default("0")]),
-    ];
-    fn intermediate(&'a self) -> Self::Intermediate {
-        match self {
-            SocketAddr::V4(v4) => alt![cons![v4]],
-            SocketAddr::V6(v6) => alt![@cons![v6]],
-        }
-    }
+#[fake_derive(CompoundType)]
+enum IpAddr {
+    V4(Ipv4Addr),
+    V6(Ipv6Addr),
 }
 
-impl NameableType for SocketAddrV4 {
-    const NAME: &dyn fmt::Display = &"SocketAddrV4";
+#[fake_derive(CompoundType)]
+enum SocketAddr {
+    V4(SocketAddrV4),
+    V6(SocketAddrV6),
 }
-impl EncodableType for SocketAddrV4 {
-    type Sigil = Compound;
+
+#[fake_derive(CompoundType)]
+struct SocketAddrV4 {
+    #[compound_type(via = self.ip())]
+    ip: Ipv4Addr,
+    #[compound_type(owned, via = self.port())]
+    port: u16,
 }
-impl<'a> CompoundTypeDef<'a> for SocketAddrV4 {
-    type Intermediate = Cons!(&'a Ipv4Addr, u16,);
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        FieldDescriptor::no_default("ip"),
-        FieldDescriptor::no_default("port"),
-    ];
-    fn intermediate(&'a self) -> Self::Intermediate {
-        cons![self.ip(), self.port(),]
-    }
-}
-impl NameableType for SocketAddrV6 {
-    const NAME: &dyn fmt::Display = &"SocketAddrV6";
-}
-impl EncodableType for SocketAddrV6 {
-    type Sigil = Compound;
-}
-impl<'a> CompoundTypeDef<'a> for SocketAddrV6 {
-    type Intermediate = Cons!(&'a Ipv6Addr, u16, u32, u32,);
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        FieldDescriptor::no_default("ip"),
-        FieldDescriptor::no_default("port"),
-        FieldDescriptor::no_default("flowinfo"),
-        FieldDescriptor::no_default("scope_id"),
-    ];
-    fn intermediate(&'a self) -> Self::Intermediate {
-        cons![self.ip(), self.port(), self.flowinfo(), self.scope_id(),]
-    }
+
+#[fake_derive(CompoundType)]
+struct SocketAddrV6 {
+    #[compound_type(via = self.ip())]
+    ip: Ipv6Addr,
+    #[compound_type(owned, via = self.port())]
+    port: u16,
+    #[compound_type(owned, via = self.flowinfo())]
+    flowinfo: u32,
+    #[compound_type(owned, via = self.scope_id())]
+    scope_id: u32,
 }
 
 impl<Format: for<'a> Encodes<Entry<'a, K, V>>, K: EncodableType, V: EncodableType>
@@ -160,6 +87,7 @@ impl<K: EncodableType, V: EncodableType> EncodableType for HashMap<K, V> {
     type Sigil = Forwarding;
 }
 impl<K: EncodableType, V: EncodableType> ForwardingType for HashMap<K, V> {}
+
 impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<HashSet<T>> for Format {
     type ForwardingFormatType<'a>
         = Format::UnboundedIterator<&'a HashSet<T>, false>

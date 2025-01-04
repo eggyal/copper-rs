@@ -1,12 +1,12 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::fs::read_to_string;
 use syn::meta::parser;
 use syn::Fields::{Named, Unnamed};
 use syn::{
-    parse_macro_input, parse_quote, parse_str, Field, Fields, ItemImpl, ItemStruct, LitStr, Type,
+    parse_macro_input, parse_quote, parse_str, parse::Parser, punctuated::Punctuated, Field, Fields, ItemImpl, ItemStruct, LitStr, Token, Type,
     TypeTuple,
 };
 
@@ -32,15 +32,40 @@ fn int2sliceindex(i: u32) -> syn::Index {
     syn::Index::from(i as usize)
 }
 
-synstructure::decl_derive!(
+synstructure::decl_attribute! {
+    [fake_derive] => fake_derive_impl
+}
+
+synstructure::decl_derive! {
     [CompoundType, attributes(compound_type)] =>
     /// Derives implementations of [`CompoundType`] and [`CompoundTypeDef`] for the annotated struct or enum.
     ///
     /// By default, the marshalled representation will comprise a reference to each field.  Fields may
-    /// be annotated with `#[compound_type(clone)]` to use a `Clone` instead.
+    /// be annotated with `#[compound_type(owned)]` to use an owned value instead (by default obtained
+    /// via cloning); and/or may be annotated with `#[compound_type(via = ...)]` to use the `...`
+    /// expression instead (which may use the `self` keyword to refer to the value being lowered).
     // TODO: enable fields to be skipped/ignored eg with #[compound_type(skip)]
     derive_compound_type
-);
+}
+
+fn fake_derive_impl(
+    attr: proc_macro2::TokenStream,
+    s: synstructure::Structure,
+) -> proc_macro2::TokenStream {
+    let derives = match Punctuated::<Ident, Token![,]>::parse_terminated.parse2(attr) {
+        Ok(derives) => derives,
+        Err(err) => return err.into_compile_error(),
+    };
+    let mut result = proc_macro2::TokenStream::new();
+    for ident in derives {
+        result.extend(if ident == "CompoundType" {
+            derive_compound_type(s.clone())
+        } else {
+            quote_spanned! { ident.span() => compile_error!("unsupported fake derive") }
+        });
+    }
+    result
+}
 
 fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStream {
     let ast = s.ast();
@@ -49,7 +74,16 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
         syn::Data::Struct(_) => (false, quote!(Cons)),
         syn::Data::Union(_) => return quote! { compile_error!("union types are not supported") },
     };
+    let mut where_clause = None;
     let name = ast.ident.to_string();
+    let name = if ast.generics.lt_token.is_some() {
+        s.add_trait_bounds(&parse_quote! { EncodableType }, &mut where_clause, synstructure::AddBounds::Generics);
+        let generic_params = ast.generics.type_params().map(|param| &param.ident);
+        let const_params = ast.generics.const_params().map(|param| &param.ident);
+        quote! { concat![ #name #(, #generic_params::NAME)* #(, #const_params)* ] }
+    } else {
+        name.into_token_stream()
+    };
 
     let mut lt = String::from("'this");
     while ast
@@ -63,27 +97,32 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
 
     s.add_bounds(synstructure::AddBounds::None);
 
-    fn use_clone(field: &syn::Field) -> syn::Result<bool> {
+    fn parse_attrs(field: &syn::Field) -> syn::Result<(bool, Option<proc_macro2::TokenStream>)> {
+        let mut owned = false;
+        let mut via = None;
         for attr in &field.attrs {
             if attr.path().is_ident("compound_type") {
-                let mut clone = false;
                 attr.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("clone") {
-                        clone = true;
-                        Ok(())
-                    } else {
-                        Err(meta.error("unsupported argument"))
+                    if meta.path.is_ident("owned") {
+                        owned = true;
+                        return Ok(());
                     }
+
+                    if meta.path.is_ident("via") {
+                        return match via.replace(meta.value()?.parse()?) {
+                            None => Ok(()),
+                            Some(_) => Err(meta.error("via previously defined")),
+                        };
+                    }
+
+                    Err(meta.error("unsupported argument"))
                 })?;
-                if clone {
-                    return Ok(true);
-                }
             }
         }
-        Ok(false)
+        Ok((owned, via))
     }
 
-    let content = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
+    let intermediate = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
         assert!(idx == 0 || is_enum);
 
         let mut tys = variant.bindings().iter().map(|binding| {
@@ -94,9 +133,9 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
                 inner = &ty_ref.elem;
             }
 
-            use_clone(ast)
-                .map(|clone| {
-                    if clone {
+            parse_attrs(ast)
+                .map(|(owned, _)| {
+                    if owned {
                         inner.to_token_stream()
                     } else {
                         quote! { &#lt #inner }
@@ -116,6 +155,9 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
                 tys.next()
             }
         })
+    }).reduce(|mut acc, item| {
+        acc.extend(quote! { , #item });
+        acc
     });
 
     let descriptors = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
@@ -129,7 +171,7 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
                 .as_ref()
                 .map(ToString::to_string)
                 .unwrap_or_else(|| idx.to_string());
-            quote! { enc::compound::FieldDescriptor::no_default(#name) }
+            quote! { FieldDescriptor::no_default(#name) }
         });
 
         let mut done = Some(());
@@ -138,27 +180,33 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
                 done.take().map(|_| {
                     let prefix = variant.prefix.unwrap().to_string();
                     let fields = &mut fields;
-                    quote! { enc::compound::VariantDescriptor::new(#prefix, cons![ #(#fields),* ]) }
+                    quote! { VariantDescriptor::new(#prefix, cons![ #(#fields),* ]) }
                 })
             } else {
                 fields.next()
             }
         })
+    }).reduce(|mut acc, item| {
+        acc.extend(quote! { , #item });
+        acc
     });
 
-    // We don't use `Structure::each_variant` here as the library provides no guarantee over iteration order,
-    // which we require to match the iteration of `s.variants()` in `alts` and `descriptors` above.
-    let arms = s.variants().iter().enumerate().map(|(idx, variant)| {
-        let fields = variant.bindings().iter().map(|binding| {
-            let ast = binding.ast();
+    let to_remove = Ident::new("TO_REMOVE", Span::call_site());
 
-            use_clone(ast)
-                .map(|clone| {
-                    if clone {
-                        quote! { #binding.clone() }
-                    } else {
-                        quote! { #binding }
-                    }
+    // We don't use `Structure::each_variant` here as the library provides no guarantee over iteration order,
+    // which we require to match the iteration of `s.variants()` in `intermediate` and `descriptors` above.
+    let arms = s.variants_mut().iter_mut().enumerate().map(|(idx, variant)| {
+        let fields = variant.bindings_mut().iter_mut().map(|binding| {
+            assert_ne!(binding.binding, to_remove);
+            let ast = binding.ast();
+            parse_attrs(ast)
+                .map(|parsed| match parsed {
+                    (_, Some(via)) => {
+                        binding.binding = to_remove.clone();
+                        via
+                    },
+                    (true, _) => quote! { #binding.clone() },
+                    _ => quote! { #binding },
                 })
                 .unwrap_or_else(syn::Error::into_compile_error)
         });
@@ -172,24 +220,36 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
             fields
         };
 
+        variant.filter(|binding| binding.binding != to_remove);
         let pat = variant.pat();
+
         quote! { #pat => #constructed }
+    }).reduce(|mut acc, item| {
+        acc.extend(quote! { , #item });
+        acc
     });
 
     s.gen_impl(quote! {
-        use ::cu29_encode::{self as enc, Alt, alt, Cons, cons};
+        // extern crate core;
+        // extern crate cu29_encode;
 
-        gen impl enc::NameableType for @Self {
-            const NAME: &'static dyn ::core::fmt::Display = &#name;//TODO: handle name collisions? (eg add a UUID)
+        use ::core::fmt;
+        use ::cu29_encode::{
+            alt, concat, cons, Alt, Cons, EncodableType, NameableType,
+            compound::{Compound, CompoundTypeDef, Desc, FieldDescriptor, VariantDescriptor},
+        };
+
+        gen impl NameableType for @Self #where_clause {
+            const NAME: &'static dyn fmt::Display = &#name;//TODO: handle name collisions? (eg add a UUID)
         }
-        gen impl enc::EncodableType for @Self {
-            type Sigil = enc::compound::Compound;
+        gen impl EncodableType for @Self #where_clause {
+            type Sigil = Compound;
         }
-        gen impl<#lt> enc::compound::CompoundTypeDef<#lt> for @Self {
-            type Intermediate = #combine![ #(#content),* ];
-            const DESCRIPTOR: enc::compound::Desc<Self::Intermediate> = cons![ #(#descriptors),* ];
+        gen impl<#lt> CompoundTypeDef<#lt> for @Self {
+            type Intermediate = #combine![ #intermediate ];
+            const DESCRIPTOR: Desc<Self::Intermediate> = cons![ #descriptors ];
             fn intermediate(&#lt self) -> Self::Intermediate {
-                match *self { #(#arms)* }
+                match *self { #arms }
             }
         }
     })

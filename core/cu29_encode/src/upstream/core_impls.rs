@@ -1,10 +1,9 @@
 use crate::{
-    alt,
-    compound::{Compound, CompoundTypeDef, Desc, FieldDescriptor, VariantDescriptor},
-    concat, cons, defer, delegate,
+    alt, concat, cons, defer, delegate,
     forward::{Defer, EncodesForwarding, Forwarding, ForwardingType},
     Alt, Cons, EncodableType, Encodes, NameableType,
 };
+use cu29_derive::fake_derive;
 use core::{
     cell::{Cell, Ref, RefCell, RefMut},
     fmt,
@@ -68,120 +67,45 @@ impl<T: EncodableType> EncodableType for RefCell<T> {
 }
 impl<T: EncodableType> ForwardingType for RefCell<T> {}
 
-impl NameableType for Duration {
-    const NAME: &dyn fmt::Display = &"Duration";
-}
-impl EncodableType for Duration {
-    type Sigil = Compound;
-}
-impl CompoundTypeDef<'_> for Duration {
-    type Intermediate = Cons!(u64, u32);
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        FieldDescriptor::no_default("secs"),
-        FieldDescriptor::no_default("nanoseconds"),
-    ];
-    fn intermediate(&self) -> Self::Intermediate {
-        cons![self.as_secs(), self.subsec_nanos(),]
-    }
+#[fake_derive(CompoundType)]
+struct Duration {
+    #[compound_type(owned, via = self.as_secs())]
+    secs: u64,
+    #[compound_type(owned, via = self.subsec_nanos())]
+    nanoseconds: u32,
 }
 
-impl<T: EncodableType> NameableType for Option<T> {
-    const NAME: &dyn fmt::Display = &concat!["Option<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for Option<T> {
-    type Sigil = Compound;
-}
-impl<'this, T> CompoundTypeDef<'this> for Option<T> {
-    type Intermediate = Alt![Cons![&'this T], Cons![]];
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        VariantDescriptor::new("Some", cons![FieldDescriptor::no_default("0")]),
-        VariantDescriptor::new("None", cons![]),
-    ];
-    fn intermediate(&'this self) -> Self::Intermediate {
-        match self {
-            Some(value) => alt![cons![value]],
-            None => alt![@cons![]],
-        }
-    }
+#[fake_derive(CompoundType)]
+enum Option<T> {
+    Some(T),
+    None,
 }
 
-impl<T: EncodableType, E: EncodableType> NameableType for Result<T, E> {
-    const NAME: &dyn fmt::Display = &concat!["Result<", T::NAME, ",", E::NAME, ">"];
-}
-impl<T: EncodableType, E: EncodableType> EncodableType for Result<T, E> {
-    type Sigil = Compound;
-}
-impl<'this, T, E> CompoundTypeDef<'this> for Result<T, E> {
-    type Intermediate = Alt![Cons![&'this T], Cons![&'this E]];
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        VariantDescriptor::new("Ok", cons![FieldDescriptor::no_default("0")]),
-        VariantDescriptor::new("Err", cons![FieldDescriptor::no_default("0")]),
-    ];
-    fn intermediate(&'this self) -> Self::Intermediate {
-        match self {
-            Ok(value) => alt![cons![value]],
-            Err(err) => alt![@cons![err]],
-        }
-    }
+#[fake_derive(CompoundType)]
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
 }
 
-impl<T: EncodableType> NameableType for Range<T> {
-    const NAME: &dyn fmt::Display = &concat!["Range<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for Range<T> {
-    type Sigil = Compound;
-}
-impl<'this, T> CompoundTypeDef<'this> for Range<T> {
-    type Intermediate = Cons![&'this T, &'this T];
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        FieldDescriptor::no_default("start"),
-        FieldDescriptor::no_default("end"),
-    ];
-    fn intermediate(&'this self) -> Self::Intermediate {
-        cons![&self.start, &self.end]
-    }
+#[fake_derive(CompoundType)]
+struct Range<T> {
+    start: T,
+    end: T,
 }
 
-impl<T: EncodableType> NameableType for Bound<T> {
-    const NAME: &dyn fmt::Display = &concat!["Bound<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for Bound<T> {
-    type Sigil = Compound;
-}
-impl<'this, T> CompoundTypeDef<'this> for Bound<T> {
-    type Intermediate = Alt![Cons![&'this T], Cons![&'this T], Cons![]];
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        VariantDescriptor::new("Included", cons![FieldDescriptor::no_default("0")]),
-        VariantDescriptor::new("Excluded", cons![FieldDescriptor::no_default("0")]),
-        VariantDescriptor::new("Unbounded", cons![]),
-    ];
-    fn intermediate(&'this self) -> Self::Intermediate {
-        match self {
-            Bound::Included(t) => alt![cons![t]],
-            Bound::Excluded(t) => alt![@cons![t]],
-            Bound::Unbounded => alt![@@cons![]],
-        }
-    }
+#[fake_derive(CompoundType)]
+enum Bound<T> {
+    Included(T),
+    Excluded(T),
+    Unbounded,
 }
 
-impl<T: EncodableType> NameableType for RangeInclusive<T> {
-    const NAME: &dyn fmt::Display = &concat!["RangeInclusive<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for RangeInclusive<T> {
-    type Sigil = Compound;
-}
-impl<'this, T> CompoundTypeDef<'this> for RangeInclusive<T> {
-    type Intermediate = Cons![&'this T, &'this T, bool];
-    const DESCRIPTOR: Desc<Self::Intermediate> = cons![
-        FieldDescriptor::no_default("start"),
-        FieldDescriptor::no_default("end"),
-        FieldDescriptor::no_default("exhausted"),
-    ];
-    fn intermediate(&'this self) -> Self::Intermediate {
-        cons![
-            self.start(),
-            self.end(),
-            matches!(self.end_bound(), Bound::Excluded(_))
-        ]
-    }
+#[fake_derive(CompoundType)]
+struct RangeInclusive<T> {
+    #[compound_type(via = self.start())]
+    start: T,
+    #[compound_type(via = self.end())]
+    end: T,
+    #[compound_type(owned, via = matches!(self.end_bound(), Bound::Excluded(_)))]
+    exhausted: bool,
 }
