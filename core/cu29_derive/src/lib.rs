@@ -6,8 +6,8 @@ use std::fs::read_to_string;
 use syn::meta::parser;
 use syn::Fields::{Named, Unnamed};
 use syn::{
-    parse_macro_input, parse_quote, parse_str, parse::Parser, punctuated::Punctuated, Field, Fields, ItemImpl, ItemStruct, LitStr, Token, Type,
-    TypeTuple,
+    parse::Parser, parse_macro_input, parse_quote, parse_str, punctuated::Punctuated, Field,
+    Fields, ItemImpl, ItemStruct, LitStr, Token, Type, TypeTuple,
 };
 
 use crate::utils::config_id_to_enum;
@@ -77,7 +77,11 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
     let mut where_clause = None;
     let name = ast.ident.to_string();
     let name = if ast.generics.lt_token.is_some() {
-        s.add_trait_bounds(&parse_quote! { EncodableType }, &mut where_clause, synstructure::AddBounds::Generics);
+        s.add_trait_bounds(
+            &parse_quote! { EncodableType },
+            &mut where_clause,
+            synstructure::AddBounds::Generics,
+        );
         let generic_params = ast.generics.type_params().map(|param| &param.ident);
         let const_params = ast.generics.const_params().map(|param| &param.ident);
         quote! { concat![ #name #(, #generic_params::NAME)* #(, #const_params)* ] }
@@ -122,112 +126,127 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
         Ok((owned, via))
     }
 
-    let intermediate = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
-        assert!(idx == 0 || is_enum);
+    let intermediate = s
+        .variants()
+        .iter()
+        .enumerate()
+        .flat_map(|(idx, variant)| {
+            assert!(idx == 0 || is_enum);
 
-        let mut tys = variant.bindings().iter().map(|binding| {
-            let ast = binding.ast();
+            let mut tys = variant.bindings().iter().map(|binding| {
+                let ast = binding.ast();
 
-            let mut inner = &ast.ty;
-            while let syn::Type::Reference(ty_ref) = inner {
-                inner = &ty_ref.elem;
-            }
+                let mut inner = &ast.ty;
+                while let syn::Type::Reference(ty_ref) = inner {
+                    inner = &ty_ref.elem;
+                }
 
-            parse_attrs(ast)
-                .map(|(owned, _)| {
-                    if owned {
-                        inner.to_token_stream()
-                    } else {
-                        quote! { &#lt #inner }
-                    }
-                })
-                .unwrap_or_else(syn::Error::into_compile_error)
+                parse_attrs(ast)
+                    .map(|(owned, _)| {
+                        if owned {
+                            inner.to_token_stream()
+                        } else {
+                            quote! { &#lt #inner }
+                        }
+                    })
+                    .unwrap_or_else(syn::Error::into_compile_error)
+            });
+
+            let mut done = Some(());
+            std::iter::from_fn(move || {
+                if is_enum {
+                    done.take().map(|_| {
+                        let tys = &mut tys;
+                        quote! { Cons![ #(#tys),* ] }
+                    })
+                } else {
+                    tys.next()
+                }
+            })
+        })
+        .reduce(|mut acc, item| {
+            acc.extend(quote! { , #item });
+            acc
         });
 
-        let mut done = Some(());
-        std::iter::from_fn(move || {
-            if is_enum {
-                done.take().map(|_| {
-                    let tys = &mut tys;
-                    quote! { Cons![ #(#tys),* ] }
-                })
-            } else {
-                tys.next()
-            }
+    let descriptors = s
+        .variants()
+        .iter()
+        .enumerate()
+        .flat_map(|(idx, variant)| {
+            assert!(variant.prefix.is_some() == is_enum);
+            assert!(idx == 0 || is_enum);
+
+            let mut fields = variant.bindings().iter().enumerate().map(|(idx, binding)| {
+                let name = binding
+                    .ast()
+                    .ident
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| idx.to_string());
+                quote! { FieldDescriptor::no_default(#name) }
+            });
+
+            let mut done = Some(());
+            std::iter::from_fn(move || {
+                if is_enum {
+                    done.take().map(|_| {
+                        let prefix = variant.prefix.unwrap().to_string();
+                        let fields = &mut fields;
+                        quote! { VariantDescriptor::new(#prefix, cons![ #(#fields),* ]) }
+                    })
+                } else {
+                    fields.next()
+                }
+            })
         })
-    }).reduce(|mut acc, item| {
-        acc.extend(quote! { , #item });
-        acc
-    });
-
-    let descriptors = s.variants().iter().enumerate().flat_map(|(idx, variant)| {
-        assert!(variant.prefix.is_some() == is_enum);
-        assert!(idx == 0 || is_enum);
-
-        let mut fields = variant.bindings().iter().enumerate().map(|(idx, binding)| {
-            let name = binding
-                .ast()
-                .ident
-                .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| idx.to_string());
-            quote! { FieldDescriptor::no_default(#name) }
+        .reduce(|mut acc, item| {
+            acc.extend(quote! { , #item });
+            acc
         });
-
-        let mut done = Some(());
-        std::iter::from_fn(move || {
-            if is_enum {
-                done.take().map(|_| {
-                    let prefix = variant.prefix.unwrap().to_string();
-                    let fields = &mut fields;
-                    quote! { VariantDescriptor::new(#prefix, cons![ #(#fields),* ]) }
-                })
-            } else {
-                fields.next()
-            }
-        })
-    }).reduce(|mut acc, item| {
-        acc.extend(quote! { , #item });
-        acc
-    });
 
     let to_remove = Ident::new("TO_REMOVE", Span::call_site());
 
     // We don't use `Structure::each_variant` here as the library provides no guarantee over iteration order,
     // which we require to match the iteration of `s.variants()` in `intermediate` and `descriptors` above.
-    let arms = s.variants_mut().iter_mut().enumerate().map(|(idx, variant)| {
-        let fields = variant.bindings_mut().iter_mut().map(|binding| {
-            assert_ne!(binding.binding, to_remove);
-            let ast = binding.ast();
-            parse_attrs(ast)
-                .map(|parsed| match parsed {
-                    (_, Some(via)) => {
-                        binding.binding = to_remove.clone();
-                        via
-                    },
-                    (true, _) => quote! { #binding.clone() },
-                    _ => quote! { #binding },
-                })
-                .unwrap_or_else(syn::Error::into_compile_error)
+    let arms = s
+        .variants_mut()
+        .iter_mut()
+        .enumerate()
+        .map(|(idx, variant)| {
+            let fields = variant.bindings_mut().iter_mut().map(|binding| {
+                assert_ne!(binding.binding, to_remove);
+                let ast = binding.ast();
+                parse_attrs(ast)
+                    .map(|parsed| match parsed {
+                        (_, Some(via)) => {
+                            binding.binding = to_remove.clone();
+                            via
+                        }
+                        (true, _) => quote! { #binding.clone() },
+                        _ => quote! { #binding },
+                    })
+                    .unwrap_or_else(syn::Error::into_compile_error)
+            });
+
+            let fields = quote! { cons![ #(#fields),* ] };
+            let constructed = if is_enum {
+                let prefix = std::iter::repeat_n(quote! { @ }, idx);
+                quote! { alt![ #(#prefix)* #fields ] }
+            } else {
+                assert_eq!(idx, 0);
+                fields
+            };
+
+            variant.filter(|binding| binding.binding != to_remove);
+            let pat = variant.pat();
+
+            quote! { #pat => #constructed }
+        })
+        .reduce(|mut acc, item| {
+            acc.extend(quote! { , #item });
+            acc
         });
-
-        let fields = quote! { cons![ #(#fields),* ] };
-        let constructed = if is_enum {
-            let prefix = std::iter::repeat_n(quote! { @ }, idx);
-            quote! { alt![ #(#prefix)* #fields ] }
-        } else {
-            assert_eq!(idx, 0);
-            fields
-        };
-
-        variant.filter(|binding| binding.binding != to_remove);
-        let pat = variant.pat();
-
-        quote! { #pat => #constructed }
-    }).reduce(|mut acc, item| {
-        acc.extend(quote! { , #item });
-        acc
-    });
 
     s.gen_impl(quote! {
         // extern crate core;

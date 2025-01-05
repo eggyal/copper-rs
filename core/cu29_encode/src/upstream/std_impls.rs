@@ -1,15 +1,9 @@
 use super::{Entry, EntryIter};
-use crate::{
-    alt, concat, cons, defer, delegate,
-    element::elements,
-    forward::{EncodesForwarding, Forwarding, ForwardingType},
-    Alt, Cons, EncodableType, Encodes, NameableType,
-};
+use crate::{defer, delegate, element::elements, iterate};
 use cu29_derive::fake_derive;
 use std::{
     collections::{hash_map, HashMap, HashSet},
     ffi::{CStr, CString},
-    fmt,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -68,39 +62,9 @@ struct SocketAddrV6 {
     scope_id: u32,
 }
 
-impl<Format: for<'a> Encodes<Entry<'a, K, V>>, K: EncodableType, V: EncodableType>
-    EncodesForwarding<HashMap<K, V>> for Format
-{
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<EntryIter<hash_map::Iter<'a, K, V>>, false>
-    where
-        K: 'a,
-        V: 'a;
-    fn forward_encodable(t: &HashMap<K, V>) -> Self::ForwardingFormatType<'_> {
-        EntryIter(t.iter()).into()
+iterate! {
+    unbounded arbitrary fn[K, V](&'a this: HashMap<K, V>) -> EntryIter<hash_map::Iter<'a, K, V>> as Entry<'a, K, V> {
+        EntryIter(this.iter())
     }
+    unbounded arbitrary fn[T](&'a this: HashSet<T>) -> &'a HashSet<T> as T { this }
 }
-impl<K: EncodableType, V: EncodableType> NameableType for HashMap<K, V> {
-    const NAME: &dyn fmt::Display = &concat!["HashMap<", K::NAME, ", ", V::NAME, ">"];
-}
-impl<K: EncodableType, V: EncodableType> EncodableType for HashMap<K, V> {
-    type Sigil = Forwarding;
-}
-impl<K: EncodableType, V: EncodableType> ForwardingType for HashMap<K, V> {}
-
-impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<HashSet<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<&'a HashSet<T>, false>
-    where
-        T: 'a;
-    fn forward_encodable(t: &HashSet<T>) -> Self::ForwardingFormatType<'_> {
-        t.into()
-    }
-}
-impl<T: EncodableType> NameableType for HashSet<T> {
-    const NAME: &dyn fmt::Display = &concat!["HashSet<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for HashSet<T> {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType> ForwardingType for HashSet<T> {}

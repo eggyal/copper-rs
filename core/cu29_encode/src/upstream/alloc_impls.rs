@@ -1,17 +1,12 @@
 extern crate alloc;
 use super::{Entry, EntryIter};
-use crate::{
-    concat, delegate,
-    forward::{EncodesForwarding, Forwarding, ForwardingType},
-    EncodableType, Encodes, NameableType,
-};
+use crate::{delegate, iterate};
 use alloc::{
     borrow::Cow,
     collections::{btree_map, BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     rc::Rc,
     sync::Arc,
 };
-use core::fmt;
 
 delegate! {
     fn[T](this: Vec<T>) -> [T] { this }
@@ -22,73 +17,17 @@ delegate! {
     fn[T: ?Sized](this: Arc<T>) -> T { this }
 }
 
-impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<BinaryHeap<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<&'a BinaryHeap<T>, false>
-    where
-        T: 'a;
-    fn forward_encodable(t: &BinaryHeap<T>) -> Self::ForwardingFormatType<'_> {
-        t.into()
-    }
-}
-impl<T: EncodableType> NameableType for BinaryHeap<T> {
-    const NAME: &dyn fmt::Display = &concat!["BinaryHeap<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for BinaryHeap<T> {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType> ForwardingType for BinaryHeap<T> {}
+iterate! {
+    // `BinaryHeap<T>` does not delegate to `[T]` (eg via `BinaryHeap::as_slice`),
+    // because that would result in a defined order iterator whereas the order is
+    // arbitrary.
+    unbounded arbitrary fn[T](&'a this: BinaryHeap<T>) -> &'a BinaryHeap<T> as T { this }
 
-impl<Format: for<'a> Encodes<Entry<'a, K, V>>, K: EncodableType, V: EncodableType>
-    EncodesForwarding<BTreeMap<K, V>> for Format
-{
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<EntryIter<btree_map::Iter<'a, K, V>>, true>
-    where
-        K: 'a,
-        V: 'a;
-    fn forward_encodable(t: &BTreeMap<K, V>) -> Self::ForwardingFormatType<'_> {
-        EntryIter(t.iter()).into()
-    }
-}
-impl<K: EncodableType, V: EncodableType> NameableType for BTreeMap<K, V> {
-    const NAME: &dyn fmt::Display = &concat!["BTreeMap<", K::NAME, ", ", V::NAME, ">"];
-}
-impl<K: EncodableType, V: EncodableType> EncodableType for BTreeMap<K, V> {
-    type Sigil = Forwarding;
-}
-impl<K: EncodableType, V: EncodableType> ForwardingType for BTreeMap<K, V> {}
+    // Whilst the following do have defined orders, they cannot delegate to slices
+    // because their data is not (necessarily) stored contiguously.
 
-impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<BTreeSet<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<&'a BTreeSet<T>, true>
-    where
-        T: 'a;
-    fn forward_encodable(t: &BTreeSet<T>) -> Self::ForwardingFormatType<'_> {
-        t.into()
-    }
+    unbounded defined fn[K, V](&'a this: BTreeMap<K, V>) -> EntryIter<btree_map::Iter<'a, K, V>>
+        as Entry<'a, K, V> { EntryIter(this.iter()) }
+    unbounded defined fn[T](&'a this: BTreeSet<T>) -> &'a BTreeSet<T> as T { this }
+    unbounded defined fn[T](&'a this: VecDeque<T>) -> &'a VecDeque<T> as T { this }
 }
-impl<T: EncodableType> NameableType for BTreeSet<T> {
-    const NAME: &dyn fmt::Display = &concat!["BTreeSet<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for BTreeSet<T> {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType> ForwardingType for BTreeSet<T> {}
-
-impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<VecDeque<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<&'a VecDeque<T>, true>
-    where
-        T: 'a;
-    fn forward_encodable(t: &VecDeque<T>) -> Self::ForwardingFormatType<'_> {
-        t.into()
-    }
-}
-impl<T: EncodableType> NameableType for VecDeque<T> {
-    const NAME: &dyn fmt::Display = &concat!["VecDeque<", T::NAME, ">"];
-}
-impl<T: EncodableType> EncodableType for VecDeque<T> {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType> ForwardingType for VecDeque<T> {}

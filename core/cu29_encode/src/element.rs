@@ -2,14 +2,14 @@ use super::{DataFormat, EncodableType, FormatType};
 
 /// Creates [`ElementType`]s.
 macro_rules! elements {
-    ($($t:ty),* $(,)?) => {$(
-        impl $crate::NameableType for $t {
-            const NAME: &dyn ::core::fmt::Display = &stringify!($t);
+    ($($(* $($star:lifetime)?)? $e:ident $($t:ident)?),* $(,)?) => {$(
+        impl$(<$t: $crate::EncodableType>)? $crate::NameableType for $(* $($star)?)? $e $($t)? {
+            const NAME: &dyn ::core::fmt::Display = &$crate::concat![$("*" $($star)?,)? ::core::stringify!($e) $(, $t::NAME)?];
         }
-        impl $crate::EncodableType for $t {
+        impl$(<$t: $crate::EncodableType>)? $crate::EncodableType for $(* $($star)?)? $e $($t)? {
             type Sigil = $crate::element::Element;
         }
-        impl $crate::element::ElementType for $t {}
+        impl$(<$t: $crate::EncodableType>)? $crate::element::ElementType for $(* $($star)?)? $e $($t)? {}
     )*};
 }
 

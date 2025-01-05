@@ -1,10 +1,4 @@
-use crate::{
-    concat, delegate,
-    element::{elements, Element, ElementType},
-    forward::{EncodesForwarding, Forwarding, ForwardingType},
-    EncodableType, Encodes, NameableType,
-};
-use core::fmt;
+use crate::{delegate, element::elements, forward::tuples, iterate};
 
 elements! {
     bool,
@@ -24,6 +18,9 @@ elements! {
     f64,
     char,
     str,
+
+    *const T,
+    *mut T,
 }
 
 delegate! {
@@ -31,49 +28,26 @@ delegate! {
     fn['b, T](this: &'b mut T) -> T { this }
 }
 
-impl<Format: Encodes<T>, T: EncodableType, const N: usize> EncodesForwarding<[T; N]> for Format {
-    type ForwardingFormatType<'a>
-        = Format::StaticLenIterator<&'a [T; N], true, N>
-    where
-        T: 'a;
-    fn forward_encodable(t: &[T; N]) -> Self::ForwardingFormatType<'_> {
-        t.into()
-    }
+iterate! {
+    static defined fn[T; const N: usize](&'a this: [T; N]) -> &'a [T; N] as T { this }
+    unbounded defined fn[T](&'a this: [T]) -> &'a [T] as T { this }
 }
-impl<T: EncodableType, const N: usize> NameableType for [T; N] {
-    const NAME: &dyn fmt::Display = &concat!["[", T::NAME, "; ", N, "]"];
-}
-impl<T: EncodableType, const N: usize> EncodableType for [T; N] {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType, const N: usize> ForwardingType for [T; N] {}
-impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<[T]> for Format {
-    type ForwardingFormatType<'a>
-        = Format::UnboundedIterator<&'a [T], true>
-    where
-        T: 'a;
-    fn forward_encodable(t: &[T]) -> Self::ForwardingFormatType<'_> {
-        t.into()
-    }
-}
-impl<T: EncodableType> NameableType for [T] {
-    const NAME: &dyn fmt::Display = &concat!["[", T::NAME, "]"];
-}
-impl<T: EncodableType> EncodableType for [T] {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType> ForwardingType for [T] {}
-impl<T: EncodableType> NameableType for *const T {
-    const NAME: &dyn fmt::Display = &concat!["*const ", T::NAME];
-}
-impl<T: EncodableType> EncodableType for *const T {
-    type Sigil = Element;
-}
-impl<T: EncodableType> ElementType for *const T {}
-impl<T: EncodableType> NameableType for *mut T {
-    const NAME: &dyn fmt::Display = &concat!["*mut ", T::NAME];
-}
-impl<T: EncodableType> EncodableType for *mut T {
-    type Sigil = Element;
-}
-impl<T: EncodableType> ElementType for *mut T {}
+
+tuples![
+    0:A,
+    1:B,
+    2:C,
+    3:D,
+    4:E,
+    5:F,
+    6:G,
+    7:H,
+    8:I,
+    9:J,
+    10:K,
+    11:L,
+    12:M,
+    13:N,
+    14:O,
+    15:P,
+];

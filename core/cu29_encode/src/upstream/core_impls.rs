@@ -1,12 +1,6 @@
-use crate::{
-    alt, concat, cons, defer, delegate,
-    forward::{Defer, EncodesForwarding, Forwarding, ForwardingType},
-    Alt, Cons, EncodableType, Encodes, NameableType,
-};
-use cu29_derive::fake_derive;
+use crate::{defer, delegate};
 use core::{
     cell::{Cell, Ref, RefCell, RefMut},
-    fmt,
     num::{
         NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroU16, NonZeroU32, NonZeroU64,
         NonZeroU8,
@@ -18,6 +12,7 @@ use core::{
     },
     time::Duration,
 };
+use cu29_derive::fake_derive;
 
 defer! {
     fn(this: NonZeroI8) -> i8 { this.get() }
@@ -43,29 +38,13 @@ defer! {
     fn[T](this: AtomicPtr<T>) -> *mut T { this.load(SeqCst) }
 
     fn[T: Copy](this: Cell<T>) -> T { this.get() }
+    fn[T](&'a this: RefCell<T>) -> T as Ref<'a, T> { this.borrow() }
 }
 
 delegate! {
     fn['b, T](this: Ref<'b, T>) -> T { this }
     fn['b, T](this: RefMut<'b, T>) -> T { this }
 }
-
-impl<Format: Encodes<T>, T: EncodableType> EncodesForwarding<RefCell<T>> for Format {
-    type ForwardingFormatType<'a>
-        = Defer<Ref<'a, T>, Format>
-    where
-        T: 'a;
-    fn forward_encodable(this: &RefCell<T>) -> Self::ForwardingFormatType<'_> {
-        Defer::new(this.borrow())
-    }
-}
-impl<T: EncodableType> NameableType for RefCell<T> {
-    const NAME: &dyn fmt::Display = T::NAME;
-}
-impl<T: EncodableType> EncodableType for RefCell<T> {
-    type Sigil = Forwarding;
-}
-impl<T: EncodableType> ForwardingType for RefCell<T> {}
 
 #[fake_derive(CompoundType)]
 struct Duration {
