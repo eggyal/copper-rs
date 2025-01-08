@@ -1,49 +1,49 @@
 use super::{
     encoding::{
-        compound::CompoundTypeExt,
+        compound::LowerableCompoundExt,
         type_list::{Alt, Cons, End, Nil},
-        EncodableType, Encodes,
+        Lowerable, Lowers,
     },
     format::*,
     Ros2List, Ros2Msg,
 };
 use bincode::{enc::Encoder, error::EncodeError, Encode};
 
-impl<I: Clone + IntoIterator<Item: EncodableType>, const LEN: usize> Encode for StaticArray<I, LEN>
+impl<I: Clone + IntoIterator<Item: Lowerable>, const LEN: usize> Encode for StaticArray<I, LEN>
 where
-    Ros2Msg: Encodes<I::Item>,
+    Ros2Msg: Lowers<I::Item>,
 {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         for element in self.0.clone() {
-            Ros2Msg::encodable(&element).encode(encoder)?;
+            Ros2Msg::lower(&element).encode(encoder)?;
         }
         Ok(())
     }
 }
-impl<I: Clone + IntoIterator<Item: EncodableType>, const MAX: usize> Encode for BoundedArray<I, MAX>
+impl<I: Clone + IntoIterator<Item: Lowerable>, const MAX: usize> Encode for BoundedArray<I, MAX>
 where
-    Ros2Msg: Encodes<I::Item>,
+    Ros2Msg: Lowers<I::Item>,
 {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         for element in self.iter.clone() {
-            Ros2Msg::encodable(&element).encode(encoder)?;
+            Ros2Msg::lower(&element).encode(encoder)?;
         }
         Ok(())
     }
 }
-impl<I: Clone + IntoIterator<Item: EncodableType>> Encode for UnboundedArray<I>
+impl<I: Clone + IntoIterator<Item: Lowerable>> Encode for UnboundedArray<I>
 where
-    Ros2Msg: Encodes<I::Item>,
+    Ros2Msg: Lowers<I::Item>,
 {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         for element in self.0.clone() {
-            Ros2Msg::encodable(&element).encode(encoder)?;
+            Ros2Msg::lower(&element).encode(encoder)?;
         }
         Ok(())
     }
 }
 
-impl<M: CompoundTypeExt<Ros2Msg>> Encode for MessageType<'_, M> {
+impl<M: LowerableCompoundExt<Ros2Msg>> Encode for MessageType<'_, M> {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         if let Some(discriminant) = self.0.discriminant() {
             discriminant.encode(encoder)?;
@@ -52,12 +52,12 @@ impl<M: CompoundTypeExt<Ros2Msg>> Encode for MessageType<'_, M> {
     }
 }
 
-impl<Head: EncodableType, Tail: Encode> Encode for Ros2List<Cons<Head, Tail>>
+impl<Head: Lowerable, Tail: Encode> Encode for Ros2List<Cons<Head, Tail>>
 where
-    Ros2Msg: Encodes<Head>,
+    Ros2Msg: Lowers<Head>,
 {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        Ros2Msg::encodable(&self.0.head).encode(encoder)?;
+        Ros2Msg::lower(&self.0.head).encode(encoder)?;
         self.0.tail.encode(encoder)
     }
 }

@@ -3,7 +3,7 @@ pub trait Sealed {}
 pub struct Bounds<'a, T: ?Sized>(core::marker::PhantomData<&'a T>);
 impl<T: ?Sized> Sealed for Bounds<'_, T> {}
 
-use super::{CompoundTypeDef, FieldDescriptor, VariantDescriptor};
+use super::{LowerableCompoundDef, FieldDescriptor, VariantDescriptor};
 use crate::{
     type_list::{Alt, Cons, End, Nil},
     DataFormat,
@@ -113,32 +113,32 @@ where
 /// A blanket-implemented extension trait that provides convenient access to the schema of a
 /// compound type's fields, and the list of encodable field values.
 ///
-/// Consumers of this trait should use its [`CompoundTypeExt`] subtrait instead, which is not
+/// Consumers of this trait should use its [`LowerableCompoundExt`] subtrait instead, which is not
 /// only nameable (whereas this trait is not) but furthermore avoids any need to name the
 /// `'this` lifetime parameter.  The `ImplicitBounds` parameter exists only to facilitate that
 /// (and in any event cannot be named owing to its `Sealed` constraint: the default of
 /// [`Bounds<'this, Self>`] is the only type that the parameter can or should be).  In effect
-/// this enables the associated [`Intermediate`] type (of the [`CompoundTypeDef`] supertrait)
+/// this enables the associated [`Intermediate`] type (of the [`LowerableCompoundDef`] supertrait)
 /// to be generic over the `'this` lifetime parameter in a usable way.
 ///
 /// See [The Better Alternative to Lifetime GATs] for more information.
 ///
-/// [`CompoundTypeExt`]: super::CompoundTypeExt
-/// [`Intermediate`]: CompoundTypeDef::Intermediate
+/// [`LowerableCompoundExt`]: super::LowerableCompoundExt
+/// [`Intermediate`]: LowerableCompoundDef::Intermediate
 /// [The Better Alternative to Lifetime GATs]: https://sabrinajewson.org/blog/the-better-alternative-to-lifetime-gats
-pub trait CompoundTypeExtDef<'this, Format: DataFormat, ImplicitBounds = Bounds<'this, Self>>
+pub trait LowerableCompoundExtDef<'this, Format: DataFormat, ImplicitBounds = Bounds<'this, Self>>
 where
     ImplicitBounds: Sealed,
-    Self: 'this + CompoundTypeDef<'this>,
+    Self: 'this + LowerableCompoundDef<'this>,
 {
     //     // type FieldSchema;
     //     // const FIELD_SCHEMA: Self::FieldSchema;
     fn as_encodable_content(&'this self) -> impl Encode;
     fn discriminant(&'this self) -> Option<usize>;
 }
-impl<'this, Format: DataFormat, T> CompoundTypeExtDef<'this, Format> for T
+impl<'this, Format: DataFormat, T> LowerableCompoundExtDef<'this, Format> for T
 where
-    T: CompoundTypeDef<'this>,
+    T: LowerableCompoundDef<'this>,
     T::Intermediate: IntoEncodable<Format>,
     // T::Descriptor: IntoEncodable<Format>, // + IntoSchema<Format>,
 {

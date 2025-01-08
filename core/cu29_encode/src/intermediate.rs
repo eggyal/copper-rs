@@ -1,69 +1,69 @@
 use super::{
-    compound::{Compound, EncodesCompound},
-    element::{Element, ElementType, EncodesElement},
-    forward::{EncodesForwarding, Forwarding},
-    DataFormat, EncodableType, Encodes, FormatType,
+    compound::{Compound, LowersCompound},
+    element::{Element, LowerableElement, LowersElement},
+    forward::{Forwarding, LowersVia},
+    DataFormat, Lowerable, Lowered, Lowers,
 };
 
-/// Sealed trait to restrict [`EncodableType::Sigil`] to only the supported sigils.
+/// Sealed trait to restrict [`Lowerable::Sigil`] to only the supported sigils.
 pub trait Sigil {}
 
 impl Sigil for Element {}
 impl Sigil for Compound {}
 impl Sigil for Forwarding {}
 
-/// Sealed helper trait that exists to unify the [`EncodesElement`], [`EncodesCompound`] and
-/// [`EncodesForwarding`] traits so that each can provide blanket implementations of [`Encodes`].
-pub trait UnifiedEncodes<T: ?Sized + EncodableType, Sigil = <T as EncodableType>::Sigil>:
+/// Sealed helper trait that exists to unify the [`LowersElement`], [`LowersCompound`] and
+/// [`LowersVia`] traits so that each can provide blanket implementations of [`Lowers`].
+pub trait LowersUnified<T: ?Sized + Lowerable, Sigil = <T as Lowerable>::Sigil>:
     DataFormat
 {
-    type UnifiedFormatType<'a>: FormatType<Self>
+    type UnifiedLowered<'a>: Lowered<Self>
     where
         T: 'a;
-    fn unified_encodable(t: &T) -> Self::UnifiedFormatType<'_>;
+    fn lower_unified(t: &T) -> Self::UnifiedLowered<'_>;
 }
 
 /// The unified blanket implementation.
-impl<Format: UnifiedEncodes<T, T::Sigil>, T: ?Sized + EncodableType> Encodes<T> for Format {
-    type FormatType<'a>
-        = Self::UnifiedFormatType<'a>
+impl<Format: LowersUnified<T, T::Sigil>, T: ?Sized + Lowerable> Lowers<T> for Format {
+    type Lowered<'a>
+        = Self::UnifiedLowered<'a>
     where
         T: 'a;
-    fn encodable(t: &T) -> Self::FormatType<'_> {
-        Format::unified_encodable(t)
+    fn lower(t: &T) -> Self::Lowered<'_> {
+        Format::lower_unified(t)
     }
 }
 
-impl<T: ?Sized + ElementType, Format: EncodesElement<T>> UnifiedEncodes<T, Element> for Format {
-    type UnifiedFormatType<'a>
-        = Format::ElementFormatType<'a>
+impl<T: ?Sized + LowerableElement, Format: LowersElement<T>> LowersUnified<T, Element> for Format {
+    type UnifiedLowered<'a>
+        = Format::ElementLowered<'a>
     where
         T: 'a;
-    fn unified_encodable(t: &T) -> Self::UnifiedFormatType<'_> {
-        Format::element_encodable(t)
+    fn lower_unified(t: &T) -> Self::UnifiedLowered<'_> {
+        Format::lower_element(t)
     }
 }
 
-impl<T: ?Sized + EncodableType<Sigil = Compound>, Format: EncodesCompound<T>>
-    UnifiedEncodes<T, Compound> for Format
+impl<T: ?Sized + Lowerable<Sigil = Compound>, Format: LowersCompound<T>> LowersUnified<T, Compound>
+    for Format
 {
-    type UnifiedFormatType<'a>
-        = Format::CompoundFormatType<'a>
+    type UnifiedLowered<'a>
+        = Format::LoweredCompound<'a>
     where
         T: 'a;
-    fn unified_encodable(t: &T) -> Self::UnifiedFormatType<'_> {
-        Format::complex_encodable(t)
+    fn lower_unified(t: &T) -> Self::UnifiedLowered<'_> {
+        Format::lower_compound(t)
     }
 }
 
-impl<T: ?Sized + EncodableType<Sigil = Forwarding>, Format: EncodesForwarding<T>>
-    UnifiedEncodes<T, Forwarding> for Format
+impl<T: ?Sized + Lowerable<Sigil = Forwarding>, Format: LowersVia<T>> LowersUnified<T, Forwarding>
+    for Format
 {
-    type UnifiedFormatType<'a>
-        = Format::ForwardingFormatType<'a>
+    type UnifiedLowered<'a>
+        = Format::ViaLowered<'a>
     where
         T: 'a;
-    fn unified_encodable(t: &T) -> Self::UnifiedFormatType<'_> {
-        Format::forward_encodable(t)
+    fn lower_unified(t: &T) -> Self::UnifiedLowered<'_> {
+        Format::lower_via(t)
     }
 }

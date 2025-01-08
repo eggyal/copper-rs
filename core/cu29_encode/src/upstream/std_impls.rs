@@ -30,19 +30,19 @@ defer! {
     fn[T: ?Sized](&'a this: RwLock<T>) -> T as RwLockReadGuard<'a, T> { this.read().unwrap() }
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 enum IpAddr {
     V4(Ipv4Addr),
     V6(Ipv6Addr),
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 enum SocketAddr {
     V4(SocketAddrV4),
     V6(SocketAddrV6),
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 struct SocketAddrV4 {
     #[compound_type(via = self.ip())]
     ip: Ipv4Addr,
@@ -50,7 +50,7 @@ struct SocketAddrV4 {
     port: u16,
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 struct SocketAddrV6 {
     #[compound_type(via = self.ip())]
     ip: Ipv6Addr,

@@ -7,7 +7,7 @@ mod format;
 mod schema;
 mod value;
 
-use cu29_encode::{self as encoding, DataFormat, EncodableType, Encodes, FormatType};
+use cu29_encode::{self as encoding, DataFormat, Lowerable, Lowered, Lowers};
 use schema::FieldType;
 
 pub enum Ros2Msg {}
@@ -21,29 +21,26 @@ impl DataFormat for Ros2Msg {
     type FieldType = FieldType;
     type EncodableAlt<List> = Ros2List<List>;
     type EncodableCons<List> = Ros2List<List>;
-    type UnboundedIterator<
-        Iter: Clone + IntoIterator<Item: EncodableType>,
-        const ORDER_DEFINED: bool,
-    >
+    type UnboundedIterator<Iter: Clone + IntoIterator<Item: Lowerable>, const ORDER_DEFINED: bool>
         = format::UnboundedArray<Iter>
     where
-        Self: Encodes<Iter::Item>;
+        Self: Lowers<Iter::Item>;
     type BoundedIterator<
-        Iter: Clone + IntoIterator<Item: EncodableType>,
+        Iter: Clone + IntoIterator<Item: Lowerable>,
         const ORDER_DEFINED: bool,
         const MAX: usize,
     >
         = format::BoundedArray<Iter, MAX>
     where
-        Self: Encodes<Iter::Item>;
+        Self: Lowers<Iter::Item>;
     type StaticLenIterator<
-        Iter: Clone + IntoIterator<Item: EncodableType>,
+        Iter: Clone + IntoIterator<Item: Lowerable>,
         const ORDER_DEFINED: bool,
         const LEN: usize,
     >
         = format::StaticArray<Iter, LEN>
     where
-        Self: Encodes<Iter::Item>;
+        Self: Lowers<Iter::Item>;
 }
 
 macro_rules! invoke_macro_with_primitives {
@@ -65,7 +62,7 @@ macro_rules! invoke_macro_with_primitives {
 }
 use invoke_macro_with_primitives;
 
-pub struct Constant<T: FormatType<Ros2Msg>> {
+pub struct Constant<T: Lowered<Ros2Msg>> {
     pub name: &'static str,
     pub value: T,
 }

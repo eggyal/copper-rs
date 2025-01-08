@@ -4,18 +4,18 @@ mod std_impls;
 use super::{
     encoding::{
         self,
-        compound::{CompoundTypeExt, EncodesCompound},
+        compound::{LowerableCompoundExt, LowersCompound},
     },
     format::{self, MessageType},
     Ros2Msg,
 };
 
-impl<M: CompoundTypeExt<Ros2Msg>> EncodesCompound<M> for Ros2Msg {
-    type CompoundFormatType<'a>
+impl<M: LowerableCompoundExt<Ros2Msg>> LowersCompound<M> for Ros2Msg {
+    type LoweredCompound<'a>
         = MessageType<'a, M>
     where
         M: 'a;
-    fn complex_encodable(this: &M) -> MessageType<'_, M> {
+    fn lower_compound(this: &M) -> MessageType<'_, M> {
         MessageType(this)
     }
 }

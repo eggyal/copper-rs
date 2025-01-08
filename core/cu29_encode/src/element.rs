@@ -1,40 +1,40 @@
-use super::{DataFormat, EncodableType, FormatType};
+use super::{DataFormat, Lowerable, Lowered};
 
-/// Creates [`ElementType`]s.
+/// Creates [`LowerableElement`]s.
 macro_rules! elements {
     ($($(* $($star:lifetime)?)? $e:ident $($t:ident)?),* $(,)?) => {$(
-        impl$(<$t: $crate::EncodableType>)? $crate::EncodableType for $(* $($star)?)? $e $($t)? {
+        impl$(<$t: $crate::Lowerable>)? $crate::Lowerable for $(* $($star)?)? $e $($t)? {
             const NAME: &dyn ::core::fmt::Display = &$crate::concat![$("*" $($star)?,)? ::core::stringify!($e) $(, $t::NAME)?];
             type Sigil = $crate::element::Element;
         }
-        impl$(<$t: $crate::EncodableType>)? $crate::element::ElementType for $(* $($star)?)? $e $($t)? {}
+        impl$(<$t: $crate::Lowerable>)? $crate::element::LowerableElement for $(* $($star)?)? $e $($t)? {}
     )*};
 }
 
 pub(crate) use elements;
 
 mod private {
-    /// [`EncodableType::Sigil`] sigil for [`ElementType`]s.
+    /// [`Lowerable::Sigil`] sigil for [`LowerableElement`]s.
     ///
-    /// [`EncodableType::Sigil`]: crate::EncodableType::Sigil
-    /// [`ElementType`]: super::ElementType
+    /// [`Lowerable::Sigil`]: crate::Lowerable::Sigil
+    /// [`LowerableElement`]: super::LowerableElement
     pub enum Element {}
 }
 pub(crate) use private::Element;
-pub trait ElementType: EncodableType<Sigil = Element> {}
+pub trait LowerableElement: Lowerable<Sigil = Element> {}
 
-/// Proxy trait for implementing [`Encodes<T>`] when `T` is an [`ElementType`].
+/// Proxy trait for implementing [`Lowers<T>`] when `T` is an [`LowerableElement`].
 ///
 /// [`DataFormat`] definers will typically want to implement this trait for each
-/// [`ElementType`], to describe how that format encodes it.
+/// [`LowerableElement`], to describe how that format encodes it.
 ///
-/// Consumers will usually want to use [`Encodes<T>`] instead, which is blanket implemented
-/// for implementers of this trait (but also for other [`EncodableType`]s).
+/// Consumers will usually want to use [`Lowers<T>`] instead, which is blanket implemented
+/// for implementers of this trait (but also for other [`Lowerable`]s).
 ///
-/// [`Encodes<T>`]: crate::Encodes<T>
-pub trait EncodesElement<T: ?Sized + ElementType>: DataFormat {
-    type ElementFormatType<'a>: FormatType<Self>
+/// [`Lowers<T>`]: crate::Lowers<T>
+pub trait LowersElement<T: ?Sized + LowerableElement>: DataFormat {
+    type ElementLowered<'a>: Lowered<Self>
     where
         T: 'a;
-    fn element_encodable(t: &T) -> Self::ElementFormatType<'_>;
+    fn lower_element(t: &T) -> Self::ElementLowered<'_>;
 }

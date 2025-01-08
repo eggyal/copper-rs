@@ -1,12 +1,12 @@
 use super::super::{
-    encoding::element::EncodesElement, format::*, invoke_macro_with_primitives, Ros2Msg,
+    encoding::element::LowersElement, format::*, invoke_macro_with_primitives, Ros2Msg,
 };
 
 macro_rules! impl_value {
     ($($format:ident($rust:ty)),* $(,)?) => {$(
-        impl EncodesElement<$rust> for Ros2Msg {
-            type ElementFormatType<'a> = $format;
-            fn element_encodable(this: &$rust) -> $format {
+        impl LowersElement<$rust> for Ros2Msg {
+            type ElementLowered<'a> = $format;
+            fn lower_element(this: &$rust) -> $format {
                 $format(*this)
             }
         }
@@ -15,15 +15,15 @@ macro_rules! impl_value {
 
 invoke_macro_with_primitives!(impl_value);
 
-impl EncodesElement<str> for Ros2Msg {
-    type ElementFormatType<'a> = String<'a>;
-    fn element_encodable(this: &str) -> Self::ElementFormatType<'_> {
+impl LowersElement<str> for Ros2Msg {
+    type ElementLowered<'a> = String<'a>;
+    fn lower_element(this: &str) -> Self::ElementLowered<'_> {
         String(this.as_bytes())
     }
 }
-impl EncodesElement<char> for Ros2Msg {
-    type ElementFormatType<'a> = BoundedString<4>;
-    fn element_encodable(this: &char) -> BoundedString<4> {
+impl LowersElement<char> for Ros2Msg {
+    type ElementLowered<'a> = BoundedString<4>;
+    fn lower_element(this: &char) -> BoundedString<4> {
         let mut data = [0; 4];
         let result = this.encode_utf8(&mut data);
         BoundedString {
