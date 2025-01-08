@@ -1,45 +1,45 @@
-use super::{DataFormat, EncodableType, Encodes, FormatType};
+use super::{DataFormat, Lowerable, Lowered, Lowers};
 use bincode::{enc::Encoder, error::EncodeError, Encode};
 use core::marker::PhantomData;
 
-/// Creates [`ForwardingType`]s via borrowed values.
+/// Creates [`LowerableVia`]s via borrowed values.
 #[macro_export]
 macro_rules! delegate {
     ($(fn$([$($lt:lifetime, )?$t:ident$(: $($bounds:tt)+)?])?($self:ident: $from:ty) -> $to:ty { $def:expr })*) => {$(
-        impl<$($($lt, )?)?Format: $crate::Encodes<$to>$(, $t: $crate::EncodableType $(+ $($bounds)+)?)?> $crate::forward::EncodesForwarding<$from> for Format {
-            type ForwardingFormatType<'a> = <Format as $crate::Encodes<$to>>::FormatType<'a> where $from: 'a;
+        impl<$($($lt, )?)?Format: $crate::Lowers<$to>$(, $t: $crate::Lowerable $(+ $($bounds)+)?)?> $crate::forward::LowersVia<$from> for Format {
+            type ViaLowered<'a> = <Format as $crate::Lowers<$to>>::Lowered<'a> where $from: 'a;
             #[allow(clippy::needless_lifetimes)]
-            fn forward_encodable<'a>($self: &'a $from) -> Self::ForwardingFormatType<'a> {
+            fn lower_via<'a>($self: &'a $from) -> Self::ViaLowered<'a> {
                 let def: &$to = &$def;
-                Self::encodable(def)
+                Self::lower(def)
             }
         }
-        impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::EncodableType for $from {
+        impl$(<$($lt, )?$t: $crate::Lowerable$(+ $($bounds)+)?>)? $crate::Lowerable for $from {
             //FIXME: should this generate a name for $from instead ?
-            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::EncodableType>::NAME;
+            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::Lowerable>::NAME;
             type Sigil = $crate::forward::Forwarding;
         }
-        impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::forward::ForwardingType for $from {}
+        impl$(<$($lt, )?$t: $crate::Lowerable$(+ $($bounds)+)?>)? $crate::forward::LowerableVia for $from {}
     )*};
 }
 
-/// Creates [`ForwardingType`]s via owned values.
+/// Creates [`LowerableVia`]s via owned values.
 #[macro_export]
 macro_rules! defer {
     (fn$([$($lt:lifetime, )?$t:ident$(: $($bounds:tt)+)?])?(&$b:lifetime $self:ident: $from:ty) -> $to:ty as $via:ty { $def:expr } $($rest:tt)*) => {
-        impl<$($($lt, )?)?Format: $crate::Encodes<$to>$(, $t: $crate::EncodableType $(+ $($bounds)+)?)?> $crate::forward::EncodesForwarding<$from> for Format {
-            type ForwardingFormatType<$b> = $crate::forward::Defer<$via, Format> where $from: $b;
+        impl<$($($lt, )?)?Format: $crate::Lowers<$to>$(, $t: $crate::Lowerable $(+ $($bounds)+)?)?> $crate::forward::LowersVia<$from> for Format {
+            type ViaLowered<$b> = $crate::forward::Defer<$via, Format> where $from: $b;
             #[allow(clippy::needless_lifetimes)]
-            fn forward_encodable<$b>($self: &$b $from) -> Self::ForwardingFormatType<$b> {
+            fn lower_via<$b>($self: &$b $from) -> Self::ViaLowered<$b> {
                 $crate::forward::Defer::new($def)
             }
         }
-        impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::EncodableType for $from {
+        impl$(<$($lt, )?$t: $crate::Lowerable$(+ $($bounds)+)?>)? $crate::Lowerable for $from {
             //FIXME: should this generate a name for $from instead ?
-            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::EncodableType>::NAME;
+            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::Lowerable>::NAME;
             type Sigil = $crate::forward::Forwarding;
         }
-        impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::forward::ForwardingType for $from {}
+        impl$(<$($lt, )?$t: $crate::Lowerable$(+ $($bounds)+)?>)? $crate::forward::LowerableVia for $from {}
         defer! { $($rest)* }
     };
     (fn$([$($lt:lifetime, )?$t:ident$(: $($bounds:tt)+)?])?($self:ident: $from:ty) -> $to:ty { $def:expr } $($rest:tt)*) => {
@@ -61,7 +61,7 @@ macro_rules! name {
     };
 }
 
-/// Creates [`ForwardingType`]s via iterators.
+/// Creates [`LowerableVia`]s via iterators.
 #[macro_export]
 macro_rules! iterate {
     ($format:ident::unbounded<$to:ty, $ordered:tt>) => {$format::UnboundedIterator<$to, {$crate::iterate!($ordered)}>};
@@ -72,25 +72,25 @@ macro_rules! iterate {
     (defined) => {true};
 
     ($($iterator:tt $ordered:tt fn$([$($lt:lifetime, )?$($t:ident$(: $($bounds:tt)+)?),*$(; const $n:ident: usize)?])?(&$b:lifetime $self:ident: $($from:tt)+) -> $to:ty as $item:ty { $def:expr })*) => {$(
-        impl<$($($lt, )?)?Format: for<$b> $crate::Encodes<$item>$($(, $t: $crate::EncodableType$( + $($bounds)+)?)*$(, const $n: usize)?)?>
-            $crate::forward::EncodesForwarding<$($from)+> for Format
+        impl<$($($lt, )?)?Format: for<$b> $crate::Lowers<$item>$($(, $t: $crate::Lowerable$( + $($bounds)+)?)*$(, const $n: usize)?)?>
+            $crate::forward::LowersVia<$($from)+> for Format
         {
-            type ForwardingFormatType<$b> = $crate::iterate!(Format::$iterator<$to, $ordered$($(, $n)?)?>) where $($from)+: $b;
-            fn forward_encodable<$b>($self: &$b $($from)+) -> Self::ForwardingFormatType<$b> {
+            type ViaLowered<$b> = $crate::iterate!(Format::$iterator<$to, $ordered$($(, $n)?)?>) where $($from)+: $b;
+            fn lower_via<$b>($self: &$b $($from)+) -> Self::ViaLowered<$b> {
                 ::core::convert::Into::into($def)
             }
         }
-        impl$(<$($lt, )?$($t: $crate::EncodableType$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::EncodableType for $($from)+ {
+        impl$(<$($lt, )?$($t: $crate::Lowerable$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::Lowerable for $($from)+ {
             const NAME: &dyn ::core::fmt::Display = &$crate::name!($([$($t),*$(;$n)?])?$($from)+);
             type Sigil = $crate::forward::Forwarding;
         }
-        impl$(<$($lt, )?$($t: $crate::EncodableType$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::forward::ForwardingType for $($from)+ {}
+        impl$(<$($lt, )?$($t: $crate::Lowerable$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::forward::LowerableVia for $($from)+ {}
     )*};
 }
 
 macro_rules! tuples {
     (@$($n:tt:$t:ident),*) => {
-        impl<'this$(, $t: $crate::EncodableType)*> $crate::compound::CompoundTypeDef<'this> for ($($t,)*) {
+        impl<'this$(, $t: $crate::Lowerable)*> $crate::compound::LowerableCompoundDef<'this> for ($($t,)*) {
             type Intermediate = $crate::Cons![$(&'this $t),*];
             const DESCRIPTOR: $crate::compound::Desc<Self::Intermediate> = $crate::cons![$(
                 $crate::compound::FieldDescriptor::no_default(::core::stringify!($n))
@@ -99,7 +99,7 @@ macro_rules! tuples {
                 $crate::cons![$(&self.$n,)*]
             }
         }
-        impl<$($t: $crate::EncodableType),*> $crate::EncodableType for ($($t,)*) {
+        impl<$($t: $crate::Lowerable),*> $crate::Lowerable for ($($t,)*) {
             const NAME: &dyn ::core::fmt::Display = &$crate::concat!["(", $($t::NAME,)* ")"];
             type Sigil = $crate::compound::Compound;
         }
@@ -117,22 +117,22 @@ macro_rules! tuples {
 
 pub(crate) use tuples;
 
-/// [`EncodableType::Sigil`] sigil for [`ForwardingType`]s.
+/// [`Lowerable::Sigil`] sigil for [`LowerableVia`]s.
 pub enum Forwarding {}
-pub trait ForwardingType: EncodableType<Sigil = Forwarding> {}
+pub trait LowerableVia: Lowerable<Sigil = Forwarding> {}
 
-/// Proxy trait for implementing [`Encodes<T>`] when `T` is a [`ForwardingType`].
+/// Proxy trait for implementing [`Lowers<T>`] when `T` is a [`LowerableVia`].
 ///
 /// Implementations of this trait are generated by the [`defer`], [`delegate`], [`iterate`]
 /// and (crate-private) `tuples` macros, which are the recommended ways to implement it.
 ///
-/// Consumers will usually want to use [`Encodes<T>`] instead, which is blanket implemented
-/// for implementers of this trait (but also for other [`EncodableType`]s).
-pub trait EncodesForwarding<T: ?Sized + EncodableType<Sigil = Forwarding>>: DataFormat {
-    type ForwardingFormatType<'a>: FormatType<Self>
+/// Consumers will usually want to use [`Lowers<T>`] instead, which is blanket implemented
+/// for implementers of this trait (but also for other [`Lowerable`]s).
+pub trait LowersVia<T: ?Sized + Lowerable<Sigil = Forwarding>>: DataFormat {
+    type ViaLowered<'a>: Lowered<Self>
     where
         T: 'a;
-    fn forward_encodable(t: &T) -> Self::ForwardingFormatType<'_>;
+    fn lower_via(t: &T) -> Self::ViaLowered<'_>;
 }
 
 pub struct Defer<D, Format>(pub D, PhantomData<Format>);
@@ -141,15 +141,15 @@ impl<D, Format> Defer<D, Format> {
         Self(d, PhantomData)
     }
 }
-impl<D: EncodableType, Format: Encodes<D>> FormatType<Format> for Defer<D, Format>
+impl<D: Lowerable, Format: Lowers<D>> Lowered<Format> for Defer<D, Format>
 where
     Self: Encode,
 {
-    const FIELD_TYPE: Format::FieldType = Format::FormatType::FIELD_TYPE;
+    const FIELD_TYPE: Format::FieldType = Format::Lowered::FIELD_TYPE;
 }
 
-impl<D: EncodableType, Format: Encodes<D>> Encode for Defer<D, Format> {
+impl<D: Lowerable, Format: Lowers<D>> Encode for Defer<D, Format> {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        Format::encodable(&self.0).encode(encoder)
+        Format::lower(&self.0).encode(encoder)
     }
 }

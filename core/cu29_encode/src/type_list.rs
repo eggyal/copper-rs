@@ -10,8 +10,8 @@ pub struct Cons<Head, Tail> {
 #[repr(C)]
 pub struct Nil;
 
-/// A macro that constructs the type of a [`Cons`]-list from the comma-delimited list of
-/// its constituent types (in order).
+/// Constructs the type of a [`Cons`]-list from the comma-delimited list of its constituent
+/// types (in order).
 #[macro_export]
 macro_rules! Cons {
     ($t:ty $(, $($ts:ty),* $(,)?)?) => {
@@ -19,8 +19,8 @@ macro_rules! Cons {
     };
     () => { $crate::type_list::Nil };
 }
-/// A macro that constructs an instance of a [`Cons`]-list from the comma-delimited list of
-/// its constituent values (in order).
+/// Constructs an instance of a [`Cons`]-list from the comma-delimited list of its constituent
+/// values (in order).
 #[macro_export]
 macro_rules! cons {
     ($e:expr $(, $($es:expr),* $(,)?)?) => {
@@ -43,8 +43,8 @@ pub enum Alt<Head, Tail> {
 /// Termination of an Alt-list.
 pub struct End;
 
-/// A macro that constructs the type of a [`Alt`]-list from the comma-delimited list of
-/// its constituent types (in order).
+/// Constructs the type of an [`Alt`]-list from the comma-delimited list of its constituent
+/// types (in order).
 #[macro_export]
 macro_rules! Alt {
     ($t:ty $(, $($ts:ty),* $(,)?)?) => {
@@ -52,6 +52,8 @@ macro_rules! Alt {
     };
     () => { $crate::type_list::End };
 }
+/// Constructs an instance of an [`Alt`]-list from the value of one of its variants prefixed
+/// by zero or more `@` symbols, one per shift from the head towards the tail of the list.
 #[macro_export]
 macro_rules! alt {
     ($e:expr) => { $crate::type_list::Alt::Head($e) };
@@ -65,7 +67,7 @@ where
     Tail: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // This isn't esspecially cache friendly: each element in the concat list could
+        // This isn't especially cache friendly: each element in the concat list could
         // well involve different cache lines.  That said, they will typically all be
         // located within immutable memory, so these reads shouldn't involve any cache
         // invalidation.
@@ -78,8 +80,8 @@ impl fmt::Display for Concat<Nil> {
         Ok(())
     }
 }
-/// A macro that constructs an instance of a [`Cons`]-list from the comma-delimited list of
-/// its constituent values (in order).
+/// Constructs an instance of [`Concat`] from the comma-delimited list of its constituent
+/// values (in order).
 #[macro_export]
 macro_rules! concat {
     ($e:expr $(, $($es:expr),* $(,)?)?) => {

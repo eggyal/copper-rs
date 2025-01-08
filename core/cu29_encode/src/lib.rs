@@ -1,65 +1,72 @@
 //! Schemaful serialisation of self-describing data types.
 //!
 //! This crate is decoupled from any particular serialisation format.
-//! It provides machinery that lowers values of Rust types into an
-//! intermediate representation, which downstream libraries can then
-//! serialise according to their own specification.  In this regard,
-//! it is conceptually somewhat similar to serde.  Where it differs
-//! (besides the API) is that it also provides "descriptions" of the
-//! types so-lowered such that downstream libraries can also generate
-//! schema for their serialisations; these descriptions are generated
-//! at compile-time via Rust's trait system and ensure coherance with
-//! the intermediate representation.
+//! It provides machinery that transforms [`Lowerable`]s into a format-
+//! agnostic intermediate representation, which downstream libraries can
+//! then further transform into [`Lowered`]s that can be serialised
+//! according to their needs: it does this with minimal (often zero)
+//! runtime overhead.  In this regard, it is conceptually somewhat
+//! similar to [serde]; where it differs (besides the API) is that it
+//! also provides "descriptions" of the types so-lowered such that
+//! downstream libraries can also generate schema for their
+//! serialisations; these descriptions are generated at compile-time via
+//! Rust's trait system and ensure coherance with the intermediate
+//! representation.
 //!
-//! At a high level, an [`EncodableType`] is anything that can be
-//! lowered to an intermediate representation; they are divided into
-//! three subtypes, as indicated by their associated
-//! [`EncodableType::Sigil`] sigil type:
-//! - [`ElementType`]s (having the crate-private `Element` sigil),
-//!   which are the basic building blocks of the intermediate
-//!   representation;
-//! - [`CompoundType`]s (having the [`Compound`] sigil), which can be
-//!   arbitrary structs or enums composed of other [`EncodableType`]s;
+//! At a high level, a [`Lowerable`] is anything that can be lowered to
+//! this crate's format-agnostic intermediate representation; they are
+//! divided into three subtypes, as indicated by their associateds
+//! [`Lowerable::Sigil`] sigil type:
+//! - [`LowerableElement`]s (having the crate-private `Element` sigil),
+//!   whose intermediate representation is themselves;
+//! - [`LowerableCompound`]s (having the [`Compound`] sigil), which can be
+//!   arbitrary (enums or) structs composed of other [`Lowerable`]s—their
+//!   intermediate representation is (an [`Alt`] list of their variants each
+//!   comprising) a [`Cons`]-list of their fields;
 //!   and
-//! - [`ForwardingType`]s (having the [`Forwarding`] sigil), which are
-//!   types that lower to some other [`EncodableType`].
+//! - [`LowerableVia`]s (having the [`Forwarding`] sigil), which are types
+//!   that lower via some other [`Lowerable`].
 //!
-//! Only this crate can define new [`ElementType`]s.  Downstream types
+//! Only this crate can define new [`LowerableElement`]s.  Downstream types
 //! that wish to be serialisable must be either compound or forwarding:
 //! - all types can be considered compound, and this is the most
 //!   powerful and most flexible option—it is likely to be used in most
-//!   situations; the [`CompoundType`][derive@CompoundType] derive
+//!   situations; the [`LowerableCompound`][derive@LowerableCompound] derive
 //!   macro should suffice for most implementations.  However, compound
 //!   types add a layer of indirection that may be undesirable.
 //! - only types for which there is already an existing suitable
 //!   intermediate representation can be considered forwarding—it is
-//!   likely to be used only for simple library types that in some way
-//!   wrap another [`EncodableType`]; one of the [`defer`], [`delegate`]
-//!   or [`iterate`] macros should suffice for most implementations.
+//!   likely to be used only for simple types that in some way wrap another
+//!   [`Lowerable`]; one of the [`defer`], [`delegate`] or [`iterate`]
+//!   macros should suffice for most implementations.
 //!
 //! Downstream implementors of a serialisation format will define a
-//! [`DataFormat`], and then implement for it [`EncodesElement`] and
-//! [`EncodesCompound`] parameterised by each such type that it is able
-//! to serialise.  Typically, there will be an [`EncodesElement`]
-//! implementation for each supported [`ElementType`] and a single
-//! generic [`EncodesCompound`] implementation that handles arbitrary
-//! [`CompoundType`]s.
+//! [`DataFormat`], and then implement for it [`LowersElement`] and
+//! [`LowersCompound`] parameterised by each such type that it is able
+//! to serialise.  Typically, there will be a [`LowersElement`]
+//! implementation for each supported [`LowerableElement`] and a single
+//! generic [`LowersCompound`] implementation that handles arbitrary
+//! [`LowerableCompound`]s.
 //!
-//! The [`Encodes`] trait is blanket implemented on all [`DataFormat`]s
-//! for every [`EncodableType`] that they support, and provides the
+//! The [`Lowers`] trait is blanket implemented on all [`DataFormat`]s
+//! for every [`Lowerable`] that they support, and provides the
 //! interface for performing serialisation operations and generating
 //! schemas.
 //!
-//! [`ElementType`]: element::ElementType
-//! [`CompoundType`]: compound::CompoundType
+//! [serde]: https://crates.io/crates/serde
+//!
+//! [`LowerableElement`]: element::LowerableElement
+//! [`LowerableCompound`]: compound::LowerableCompound
 //! [`Compound`]: compound::Compound
-//! [`ForwardingType`]: forward::ForwardingType
+//! [`Alt`]: type_list::Alt
+//! [`Cons`]: type_list::Cons
+//! [`LowerableVia`]: forward::LowerableVia
 //! [`Forwarding`]: forward::Forwarding
 //!
-//! [derive@CompoundType]: derive@compound::CompoundType
+//! [derive@LowerableCompound]: derive@compound::LowerableCompound
 //!
-//! [`EncodesElement`]: element::EncodesElement
-//! [`EncodesCompound`]: compound::EncodesCompound
+//! [`LowersElement`]: element::LowersElement
+//! [`LowersCompound`]: compound::LowersCompound
 
 extern crate self as cu29_encode;
 
@@ -78,14 +85,14 @@ use core::fmt;
 /// [`DataFormat`]s.
 ///
 /// Implementations of this trait are generated by the [`defer`], [`delegate`], [`iterate`]
-/// and [`CompoundType`] macros (as well as the crate-private `elements` and `tuples` macros),
+/// and [`LowerableCompound`] macros (as well as the crate-private `elements` and `tuples` macros),
 /// which are the recommended ways to implement it.  Explicit implementations are likely only
 /// to be defined locally in this crate, for upstream library types.
 ///
 /// This trait should not need to be consumed outside of this crate.
 ///
-/// [`CompoundType`]: derive@compound::CompoundType
-pub trait EncodableType {
+/// [`LowerableCompound`]: derive@compound::LowerableCompound
+pub trait Lowerable {
     /// Provides access to a statically defined name for this type.
     ///
     /// The name should uniquely identify the type.
@@ -114,22 +121,25 @@ pub trait DataFormat {
     type FieldType;
     type EncodableAlt<List>: From<List>;
     type EncodableCons<List>: From<List>;
-    type UnboundedIterator<Iter: Clone + IntoIterator<Item: EncodableType>, const ORDER_DEFINED: bool>: From<Iter> + FormatType<Self> where Self: Encodes<Iter::Item>;
-    type BoundedIterator<Iter: Clone + IntoIterator<Item: EncodableType>, const ORDER_DEFINED: bool, const MAX: usize>: From<Iter> + FormatType<Self> where Self: Encodes<Iter::Item>;
-    type StaticLenIterator<Iter: Clone + IntoIterator<Item: EncodableType>, const ORDER_DEFINED: bool, const LEN: usize>: From<Iter> + FormatType<Self> where Self: Encodes<Iter::Item>;
+    type UnboundedIterator<Iter: Clone + IntoIterator<Item: Lowerable>, const ORDER_DEFINED: bool>: From<Iter> + Lowered<Self> where Self: Lowers<Iter::Item>;
+    type BoundedIterator<Iter: Clone + IntoIterator<Item: Lowerable>, const ORDER_DEFINED: bool, const MAX: usize>: From<Iter> + Lowered<Self> where Self: Lowers<Iter::Item>;
+    type StaticLenIterator<Iter: Clone + IntoIterator<Item: Lowerable>, const ORDER_DEFINED: bool, const LEN: usize>: From<Iter> + Lowered<Self> where Self: Lowers<Iter::Item>;
 }
 
 /// A format type is a serializable datum that knows its type in `Format`'s
 /// serialisation schema.
-pub trait FormatType<Format: ?Sized + DataFormat>: bincode::Encode {
+pub trait Lowered<Format: ?Sized + DataFormat>: bincode::Encode {
     const FIELD_TYPE: Format::FieldType;
 }
 
-/// The interface through which [`EncodableType`]s can be lowered into their
+/// The interface through which [`Lowerable`]s can be lowered into their
 /// [`DataFormat`]-specific representation.
-pub trait Encodes<T: ?Sized + EncodableType>: intermediate::UnifiedEncodes<T, T::Sigil> {
-    type FormatType<'a>: FormatType<Self>
+pub trait Lowers<T: ?Sized + Lowerable>: intermediate::LowersUnified<T, T::Sigil> {
+    type Lowered<'a>: Lowered<Self>
     where
         T: 'a;
-    fn encodable(t: &T) -> Self::FormatType<'_>;
+
+    /// Lowers a value of type `T`, via its format-agnostic intermediate representation,
+    /// to the relevant [`Lowered`] of the specific `Self` format.
+    fn lower(t: &T) -> Self::Lowered<'_>;
 }

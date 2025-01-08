@@ -46,7 +46,7 @@ delegate! {
     fn['b, T](this: RefMut<'b, T>) -> T { this }
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 struct Duration {
     #[compound_type(owned, via = self.as_secs())]
     secs: u64,
@@ -54,32 +54,32 @@ struct Duration {
     nanoseconds: u32,
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 enum Option<T> {
     Some(T),
     None,
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 enum Result<T, E> {
     Ok(T),
     Err(E),
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 struct Range<T> {
     start: T,
     end: T,
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 enum Bound<T> {
     Included(T),
     Excluded(T),
     Unbounded,
 }
 
-#[fake_derive(CompoundType)]
+#[fake_derive(LowerableCompound)]
 struct RangeInclusive<T> {
     #[compound_type(via = self.start())]
     start: T,

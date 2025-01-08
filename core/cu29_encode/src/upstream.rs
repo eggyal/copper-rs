@@ -3,9 +3,9 @@ mod core_impls;
 mod primitive_impls;
 mod std_impls;
 
-use crate::compound::CompoundType;
+use crate::compound::LowerableCompound;
 
-#[derive(CompoundType)]
+#[derive(LowerableCompound)]
 pub struct Entry<'a, K, V> {
     key: &'a K,
     val: &'a V,

@@ -33,12 +33,19 @@ fn int2sliceindex(i: u32) -> syn::Index {
 }
 
 synstructure::decl_attribute! {
-    [fake_derive] => fake_derive_impl
+    [fake_derive] =>
+    /// Outputs the implementations produced by the specified #[derive] macro, without outputting the
+    /// definition of the item upon which it is applied.  This is useful when a trait-defining crate
+    /// wishes to provide implementations for upstream types via derive macro.
+    ///
+    /// Only derive macros known to `fake_derive` are supported.  Currently, it knows only of
+    /// [`LowerableCompound`].
+    fake_derive_impl
 }
 
 synstructure::decl_derive! {
-    [CompoundType, attributes(compound_type)] =>
-    /// Derives implementations of [`CompoundType`] and [`CompoundTypeDef`] for the annotated struct or enum.
+    [LowerableCompound, attributes(compound_type)] =>
+    /// Derives implementations of [`LowerableCompound`] and [`LowerableCompoundDef`] for the annotated struct or enum.
     ///
     /// By default, the marshalled representation will comprise a reference to each field.  Fields may
     /// be annotated with `#[compound_type(owned)]` to use an owned value instead (by default obtained
@@ -58,7 +65,7 @@ fn fake_derive_impl(
     };
     let mut result = proc_macro2::TokenStream::new();
     for ident in derives {
-        result.extend(if ident == "CompoundType" {
+        result.extend(if ident == "LowerableCompound" {
             derive_compound_type(s.clone())
         } else {
             quote_spanned! { ident.span() => compile_error!("unsupported fake derive") }
@@ -78,7 +85,7 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
     let name = ast.ident.to_string();
     let name = if ast.generics.lt_token.is_some() {
         s.add_trait_bounds(
-            &parse_quote! { EncodableType },
+            &parse_quote! { Lowerable },
             &mut where_clause,
             synstructure::AddBounds::Generics,
         );
@@ -254,15 +261,15 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
 
         use ::core::fmt;
         use ::cu29_encode::{
-            alt, concat, cons, Alt, Cons, EncodableType,
-            compound::{Compound, CompoundTypeDef, Desc, FieldDescriptor, VariantDescriptor},
+            alt, concat, cons, Alt, Cons, Lowerable,
+            compound::{Compound, LowerableCompoundDef, Desc, FieldDescriptor, VariantDescriptor},
         };
 
-        gen impl EncodableType for @Self #where_clause {
+        gen impl Lowerable for @Self #where_clause {
             const NAME: &'static dyn fmt::Display = &#name;//TODO: handle name collisions? (eg add a UUID)
             type Sigil = Compound;
         }
-        gen impl<#lt> CompoundTypeDef<#lt> for @Self {
+        gen impl<#lt> LowerableCompoundDef<#lt> for @Self {
             type Intermediate = #combine![ #intermediate ];
             const DESCRIPTOR: Desc<Self::Intermediate> = cons![ #descriptors ];
             fn intermediate(&#lt self) -> Self::Intermediate {
