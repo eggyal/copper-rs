@@ -14,11 +14,9 @@ macro_rules! delegate {
                 Self::encodable(def)
             }
         }
-        impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::NameableType for $from {
-            //FIXME: should this generate a name for $from instead ?
-            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::NameableType>::NAME;
-        }
         impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::EncodableType for $from {
+            //FIXME: should this generate a name for $from instead ?
+            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::EncodableType>::NAME;
             type Sigil = $crate::forward::Forwarding;
         }
         impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::forward::ForwardingType for $from {}
@@ -36,11 +34,9 @@ macro_rules! defer {
                 $crate::forward::Defer::new($def)
             }
         }
-        impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::NameableType for $from {
-            //FIXME: should this generate a name for $from instead ?
-            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::NameableType>::NAME;
-        }
         impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::EncodableType for $from {
+            //FIXME: should this generate a name for $from instead ?
+            const NAME: &'static dyn ::core::fmt::Display = <$to as $crate::EncodableType>::NAME;
             type Sigil = $crate::forward::Forwarding;
         }
         impl$(<$($lt, )?$t: $crate::EncodableType$(+ $($bounds)+)?>)? $crate::forward::ForwardingType for $from {}
@@ -84,10 +80,8 @@ macro_rules! iterate {
                 ::core::convert::Into::into($def)
             }
         }
-        impl$(<$($lt, )?$($t: $crate::EncodableType$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::NameableType for $($from)+ {
-            const NAME: &dyn ::core::fmt::Display = &$crate::name!($([$($t),*$(;$n)?])?$($from)+);
-        }
         impl$(<$($lt, )?$($t: $crate::EncodableType$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::EncodableType for $($from)+ {
+            const NAME: &dyn ::core::fmt::Display = &$crate::name!($([$($t),*$(;$n)?])?$($from)+);
             type Sigil = $crate::forward::Forwarding;
         }
         impl$(<$($lt, )?$($t: $crate::EncodableType$(+ $($bounds)+)?),*$(, const $n: usize)?>)? $crate::forward::ForwardingType for $($from)+ {}
@@ -105,10 +99,8 @@ macro_rules! tuples {
                 $crate::cons![$(&self.$n,)*]
             }
         }
-        impl<$($t: $crate::EncodableType),*> $crate::NameableType for ($($t,)*) {
-            const NAME: &dyn ::core::fmt::Display = &$crate::concat!["(", $($t::NAME,)* ")"];
-        }
         impl<$($t: $crate::EncodableType),*> $crate::EncodableType for ($($t,)*) {
+            const NAME: &dyn ::core::fmt::Display = &$crate::concat!["(", $($t::NAME,)* ")"];
             type Sigil = $crate::compound::Compound;
         }
     };

@@ -10,7 +10,7 @@ mod value;
 use cu29_encode::{self as encoding, DataFormat, EncodableType, Encodes, FormatType};
 use schema::FieldType;
 
-pub struct Ros2Msg;
+pub enum Ros2Msg {}
 pub struct Ros2List<List>(List);
 impl<List> From<List> for Ros2List<List> {
     fn from(list: List) -> Self {

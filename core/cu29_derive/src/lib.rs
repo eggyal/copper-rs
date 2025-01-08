@@ -254,14 +254,12 @@ fn derive_compound_type(mut s: synstructure::Structure) -> proc_macro2::TokenStr
 
         use ::core::fmt;
         use ::cu29_encode::{
-            alt, concat, cons, Alt, Cons, EncodableType, NameableType,
+            alt, concat, cons, Alt, Cons, EncodableType,
             compound::{Compound, CompoundTypeDef, Desc, FieldDescriptor, VariantDescriptor},
         };
 
-        gen impl NameableType for @Self #where_clause {
-            const NAME: &'static dyn fmt::Display = &#name;//TODO: handle name collisions? (eg add a UUID)
-        }
         gen impl EncodableType for @Self #where_clause {
+            const NAME: &'static dyn fmt::Display = &#name;//TODO: handle name collisions? (eg add a UUID)
             type Sigil = Compound;
         }
         gen impl<#lt> CompoundTypeDef<#lt> for @Self {

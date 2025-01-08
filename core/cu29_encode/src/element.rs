@@ -3,10 +3,8 @@ use super::{DataFormat, EncodableType, FormatType};
 /// Creates [`ElementType`]s.
 macro_rules! elements {
     ($($(* $($star:lifetime)?)? $e:ident $($t:ident)?),* $(,)?) => {$(
-        impl$(<$t: $crate::EncodableType>)? $crate::NameableType for $(* $($star)?)? $e $($t)? {
-            const NAME: &dyn ::core::fmt::Display = &$crate::concat![$("*" $($star)?,)? ::core::stringify!($e) $(, $t::NAME)?];
-        }
         impl$(<$t: $crate::EncodableType>)? $crate::EncodableType for $(* $($star)?)? $e $($t)? {
+            const NAME: &dyn ::core::fmt::Display = &$crate::concat![$("*" $($star)?,)? ::core::stringify!($e) $(, $t::NAME)?];
             type Sigil = $crate::element::Element;
         }
         impl$(<$t: $crate::EncodableType>)? $crate::element::ElementType for $(* $($star)?)? $e $($t)? {}
